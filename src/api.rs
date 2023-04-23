@@ -57,3 +57,39 @@ pub fn saves() -> WarpResult<warp::reply::Json> {
         Err(_) => WarpResult::INTERNAL_SERVER_ERROR,
     }
 }
+
+pub fn icons(save: String) -> WarpResult<warp::reply::WithHeader<Vec<u8>>> {
+    if !is_safe(&save) {
+        return WarpResult::BAD_REQUEST;
+    }
+    const UNKNOWN_PNG: &[u8] = include_bytes!("../static/unknown.png");
+    let data = match std::fs::read(format!("saves/{save}/world/icon.png")) {
+        Ok(data) => data,
+        Err(_) => UNKNOWN_PNG.to_owned(),
+    };
+    WarpResult::Ok(warp::reply::with_header(data, "Content-Type", "image/x-png"))
+}
+
+fn is_safe(text: &str) -> bool {
+    if text.is_empty() || !text.is_ascii() || text.ends_with('.') {
+        return false;
+    }
+    if text.starts_with(' ') || text.ends_with(' ') {
+        return false;
+    }
+    for byte in text.as_bytes() {
+        if matches!(*byte, 0..=31 | 127 | b'/' | b'\\' | b':' | b'*' | b'?' | b'"' | b'<' | b'>') {
+            return false;
+        }
+    }
+    const INVALID: [&str; 24] = [
+        ".", "..",
+        "CON", "PRN", "AUX", "NUL",
+        "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+        "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    ];
+    if INVALID.iter().any(|x| text.eq_ignore_ascii_case(x)) {
+        return false;
+    }
+    true
+}

@@ -13,6 +13,7 @@ async fn main() {
     let apis = filters!(
         GET versions;
         GET saves;
+        GET icons String;
         POST CreateWorld;
     );
 
