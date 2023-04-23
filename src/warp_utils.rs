@@ -1,38 +1,36 @@
 
-macro_rules! get_filter {
-    ($expr:expr) => {{
+macro_rules! filters {
+    (GET $func_name:ident $($ty:ty)*;) => {{
         use warp::Filter;
         warp::get()
             .and(warp::path("api"))
             .and(warp::path(const_str::convert_ascii_case!(
                 snake,
-                stringify!($expr)
+                stringify!($func_name)
             )))
-            .map($expr)
+            $(.and(warp::path::param::<$ty>()))*
+            .and(warp::path::end())
+            .map($func_name)
     }};
-}
-
-macro_rules! post_filter {
-    ($ty:ty) => {{
+    (GET $func_name:ident $($ty:ty)*; $($tail:tt)+) => {
+        filters!(GET $func_name $($ty)*;).or(filters!($($tail)+))
+    };
+    (POST $struct_name:ident $($ty:ty)*;) => {{
         use warp::Filter;
         warp::post()
             .and(warp::path("api"))
             .and(warp::path(const_str::convert_ascii_case!(
                 snake,
-                stringify!($ty)
+                stringify!($struct_name)
             )))
+            $(.and(warp::path::param::<$ty>()))*
+            .and(warp::path::end())
             .and(warp::body::content_length_limit(1024 * 16))
             .and(warp::body::json())
-            .map(<$ty>::post)
+            .map(<$struct_name>::post)
     }};
-}
-
-macro_rules! or_filters {
-    ($filter:expr) => {
-        $filter
-    };
-    ($filter:expr, $($filters:expr,)*) => {
-        $filter $(.or($filters))*
+    (POST $struct_name:ident $($ty:ty)*; $($tail:tt)+) => {
+        filters!(POST $struct_name $($ty)*;).or(filters!($($tail)+))
     };
 }
 
@@ -42,9 +40,7 @@ macro_rules! catch {
     };
 }
 
-pub(crate) use get_filter;
-pub(crate) use post_filter;
-pub(crate) use or_filters;
+pub(crate) use filters;
 pub(crate) use catch;
 
 pub enum WarpResult<T: warp::Reply> {
@@ -56,6 +52,8 @@ impl<T> WarpResult<T>
 where
     T: warp::Reply,
 {
+    pub const BAD_REQUEST: Self =
+        WarpResult::Err(warp::http::StatusCode::BAD_REQUEST);
     pub const INTERNAL_SERVER_ERROR: Self =
         WarpResult::Err(warp::http::StatusCode::INTERNAL_SERVER_ERROR);
 }

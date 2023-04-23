@@ -4,16 +4,16 @@ mod warp_utils;
 
 use warp::Filter;
 use api::*;
-use warp_utils::{get_filter, post_filter, or_filters};
+use warp_utils::filters;
 
 const PORT: u16 = 3030;
 
 #[tokio::main]
 async fn main() {
-    let apis = or_filters!(
-        get_filter!(versions),
-        get_filter!(saves),
-        post_filter!(CreateWorld),
+    let apis = filters!(
+        GET versions;
+        GET saves;
+        POST CreateWorld;
     );
 
     #[cfg(not(debug_assertions))]
