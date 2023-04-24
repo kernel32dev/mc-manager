@@ -8,6 +8,7 @@
             "request": "launch",
             "program": "${workspaceFolder}/target/debug/mc-manager.exe",
             "cwd": "${workspaceFolder}",
+            "args": [ "run" ],
             "sourceLanguages": [ "rust" ]
         }
     ]
