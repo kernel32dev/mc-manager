@@ -109,7 +109,7 @@ fn install_service() {
     // This example installs the service defined in `examples/ping_service.rs`.
     // In the real world code you would set the executable path to point to your own binary
     // that implements windows service.
-    let service_binary_path = ::std::env::current_exe().expect("current_exe");
+    let service_binary_path = std::env::current_exe().expect("current_exe");
 
     let service_info = ServiceInfo {
         name: OsString::from(SERVICE_NAME),
