@@ -3,8 +3,8 @@
     "tasks": [
         {
             "label": "cargo build debug",
-            "type": "shell",
-            "command": "cargo build",
+            "type": "cargo",
+            "command": "build",
             "problemMatcher": "$rustc",
             "group": {
                 "kind": "build",
