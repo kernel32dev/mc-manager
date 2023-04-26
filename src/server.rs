@@ -10,7 +10,8 @@ pub fn serve(shutdown: Option<tokio::sync::oneshot::Receiver<()>>) {
         GET versions;
         GET saves;
         GET icons String;
-        POST CreateWorld;
+        POST CreateSave;
+        POST DeleteSave;
     );
 
     #[cfg(not(debug_assertions))] // cd into folder of executable

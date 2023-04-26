@@ -1,18 +1,32 @@
 
+use crate::state::{save, SaveError};
+use crate::warp_utils::{catch, WarpResult};
 use serde::{Deserialize, Serialize};
-use crate::warp_utils::{WarpResult, catch};
+use warp::Reply;
+use warp::reply::Response;
 
 // APIS //
 
 #[derive(Deserialize, Serialize)]
-pub struct CreateWorld {
+pub struct CreateSave {
     name: String,
     version: String,
 }
 
-impl CreateWorld {
-    pub fn post(self) -> warp::reply::Html<String> {
-        warp::reply::html(format!("<h1>Create World Response</h1><h2>name: {}</h2><h2>version: {}</h2>", self.name, self.version))
+impl CreateSave {
+    pub fn post(self) -> WarpResult<Response> {
+        save::create(&self.name, &self.version).map(json_response).into()
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct DeleteSave {
+    name: String,
+}
+
+impl DeleteSave {
+    pub fn post(self) -> WarpResult<Response> {
+        save::delete(&self.name).map(|_| warp::reply().into_response()).into()
     }
 }
 
@@ -33,29 +47,28 @@ pub fn versions() -> WarpResult<warp::reply::Json> {
     });
 
     match versions {
-        Ok(versions) => WarpResult::Ok(warp::reply::json(&versions)),
+        Ok(versions) => WarpResult::Reply(warp::reply::json(&versions)),
         Err(_) => WarpResult::INTERNAL_SERVER_ERROR,
     }
 }
 
-pub fn saves() -> WarpResult<warp::reply::Json> {
-    let saves: Result<Vec<String>, std::io::Error> = catch!({
-        let mut saves = Vec::new();
-        for path in std::fs::read_dir("saves")? {
-            let path = path?;
-            if matches!(path.metadata(), Ok(md) if md.is_dir()) {
-                if let Some(filename) = path.file_name().to_str() {
-                    saves.push(filename.to_owned())
-                }
-            }
+pub fn saves() -> WarpResult<Response> {
+    let result: Result<Response, SaveError> = catch!({
+        let mut body = String::with_capacity(16 * 1024);
+        body.push_str("{\"saves\":[");
+        for name in save::iter()? {
+            body.push_str(&save::load(&name?)?);
+            body.push(',');
         }
-        Ok(saves)
+        match body.pop() {
+            Some('[') => body.push_str("[]"),
+            Some(',') => body.push(']'),
+            _ => unreachable!(),
+        }
+        body.push('}');
+        Ok(json_response(body))
     });
-
-    match saves {
-        Ok(saves) => WarpResult::Ok(warp::reply::json(&saves)),
-        Err(_) => WarpResult::INTERNAL_SERVER_ERROR,
-    }
+    result.into()
 }
 
 pub fn icons(save: String) -> WarpResult<warp::reply::WithHeader<Vec<u8>>> {
@@ -67,7 +80,11 @@ pub fn icons(save: String) -> WarpResult<warp::reply::WithHeader<Vec<u8>>> {
         Ok(data) => data,
         Err(_) => UNKNOWN_PNG.to_owned(),
     };
-    WarpResult::Ok(warp::reply::with_header(data, "Content-Type", "image/x-png"))
+    WarpResult::Reply(warp::reply::with_header(
+        data,
+        "Content-Type",
+        "image/x-png",
+    ))
 }
 
 fn is_safe(text: &str) -> bool {
@@ -78,18 +95,28 @@ fn is_safe(text: &str) -> bool {
         return false;
     }
     for byte in text.as_bytes() {
-        if matches!(*byte, 0..=31 | 127 | b'/' | b'\\' | b':' | b'*' | b'?' | b'"' | b'<' | b'>') {
+        if matches!(
+            *byte,
+            0..=31 | 127 | b'/' | b'\\' | b':' | b'*' | b'?' | b'"' | b'<' | b'>'
+        ) {
             return false;
         }
     }
     const INVALID: [&str; 24] = [
-        ".", "..",
-        "CON", "PRN", "AUX", "NUL",
-        "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
-        "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+        ".", "..", "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6",
+        "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8",
+        "LPT9",
     ];
     if INVALID.iter().any(|x| text.eq_ignore_ascii_case(x)) {
         return false;
     }
     true
+}
+
+/// creates a json reponse from raw body with the appropiate content-type
+fn json_response(body: String) -> Response {
+    use warp::http::header::CONTENT_TYPE;
+    let (mut parts, body) = Response::new(body.into()).into_parts();
+    parts.headers.append(CONTENT_TYPE, "application/json".parse().unwrap());
+    Response::from_parts(parts, body)
 }

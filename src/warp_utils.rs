@@ -42,20 +42,21 @@ macro_rules! catch {
 
 pub(crate) use filters;
 pub(crate) use catch;
+use crate::state::SaveError;
 
-pub enum WarpResult<T: warp::Reply> {
-    Ok(T),
-    Err(warp::http::StatusCode),
+/// implements warp::Reply if T also implements warp::Reply
+pub enum WarpResult<T> {
+    Reply(T),
+    Status(warp::http::StatusCode),
+    SaveError(SaveError),
 }
 
 impl<T> WarpResult<T>
-where
-    T: warp::Reply,
 {
     pub const BAD_REQUEST: Self =
-        WarpResult::Err(warp::http::StatusCode::BAD_REQUEST);
+        WarpResult::Status(warp::http::StatusCode::BAD_REQUEST);
     pub const INTERNAL_SERVER_ERROR: Self =
-        WarpResult::Err(warp::http::StatusCode::INTERNAL_SERVER_ERROR);
+        WarpResult::Status(warp::http::StatusCode::INTERNAL_SERVER_ERROR);
 }
 
 impl<T> warp::Reply for WarpResult<T>
@@ -63,9 +64,44 @@ where
     T: warp::Reply,
 {
     fn into_response(self) -> warp::reply::Response {
+        #[derive(serde::Serialize)]
+        struct SaveErrorJson {
+            err: &'static str,
+            desc: &'static str,
+        }
+        const NOTFOUND: SaveErrorJson = SaveErrorJson { err: "NotFound", desc: "O save não foi encontrado" };
+        const ALREADYEXISTS: SaveErrorJson = SaveErrorJson { err: "AlreadyExists", desc: "O nome já é usado por um save" };
+        const VERSIONNOTFOUND: SaveErrorJson = SaveErrorJson { err: "VersionNotFound", desc: "A versão não existe, ou não está instalada" };
+        const PROPERTYNOTFOUND: SaveErrorJson = SaveErrorJson { err: "PropertyNotFound", desc: "Essa propiedade não existe" };
+        const IOERROR: SaveErrorJson = SaveErrorJson { err: "IOError", desc: "Ocorreu um erro ao operar os arquivos" };
         match self {
-            WarpResult::Ok(reply) => reply.into_response(),
-            WarpResult::Err(status) => status.into_response(),
+            WarpResult::Reply(reply) => reply.into_response(),
+            WarpResult::Status(status) => status.into_response(),
+            WarpResult::SaveError(error) => match error {
+                SaveError::NotFound => warp::reply::with_status(warp::reply::json(&NOTFOUND), warp::http::StatusCode::BAD_REQUEST).into_response(),
+                SaveError::AlreadyExists => warp::reply::with_status(warp::reply::json(&ALREADYEXISTS), warp::http::StatusCode::BAD_REQUEST).into_response(),
+                SaveError::VersionNotFound => warp::reply::with_status(warp::reply::json(&VERSIONNOTFOUND), warp::http::StatusCode::BAD_REQUEST).into_response(),
+                SaveError::PropertyNotFound => warp::reply::with_status(warp::reply::json(&PROPERTYNOTFOUND), warp::http::StatusCode::BAD_REQUEST).into_response(),
+                SaveError::IOError => warp::reply::with_status(warp::reply::json(&IOERROR), warp::http::StatusCode::INTERNAL_SERVER_ERROR).into_response(),
+            },
+        }
+    }
+}
+
+impl<T> From<Result<T, warp::http::StatusCode>> for WarpResult<T> {
+    fn from(value: Result<T, warp::http::StatusCode>) -> Self {
+        match value {
+            Ok(value) => WarpResult::Reply(value),
+            Err(status) => WarpResult::Status(status),
+        }
+    }
+}
+
+impl<T> From<Result<T, SaveError>> for WarpResult<T> {
+    fn from(value: Result<T, SaveError>) -> Self {
+        match value {
+            Ok(value) => WarpResult::Reply(value),
+            Err(error) => WarpResult::SaveError(error),
         }
     }
 }
