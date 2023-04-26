@@ -72,7 +72,7 @@ pub mod save {
             // folder created successfully, move files into the folder
             std::fs::write(
                 format!("saves/{name}/eula.txt"),
-                "# file auto created by mc-manager\r\neula=true\r\n",
+                "# file created by mc-manager\r\neula=true\r\n",
             )?;
             std::fs::write(format!("saves/{name}/server.properties"), properties)?;
             std::fs::copy(
