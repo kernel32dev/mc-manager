@@ -1,5 +1,6 @@
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::io::ErrorKind;
 use std::path::Path;
 
 /// holds the value of a property
@@ -48,6 +49,16 @@ pub enum SaveError {
     IOError,
 }
 
+impl From<std::io::Error> for SaveError {
+    fn from(error: std::io::Error) -> Self {
+        match error.kind() {
+            ErrorKind::AlreadyExists => Self::AlreadyExists,
+            ErrorKind::NotFound => Self::NotFound,
+            _ => Self::IOError,
+        }
+    }
+}
+
 pub mod save {
     use super::*;
     /// creates the save with the versions specified and returns the same as load would
@@ -55,14 +66,7 @@ pub mod save {
         if !std::fs::metadata(format!("versions/{version}.jar")).is_ok() {
             return Err(SaveError::VersionNotFound);
         }
-        if let Err(error) = std::fs::create_dir(format!("saves/{name}")) {
-            const ERROR_ALREADY_EXISTS: i32 = 183;
-            if error.raw_os_error() == Some(ERROR_ALREADY_EXISTS) {
-                return Err(SaveError::AlreadyExists);
-            } else {
-                return Err(SaveError::IOError);
-            }
-        }
+        std::fs::create_dir(format!("saves/{name}"))?;
         let properties = generate_default_properties(version);
         if (|| {
             // folder created successfully, move files into the folder
@@ -79,6 +83,7 @@ pub mod save {
         })()
         .is_err()
         {
+            std::fs::remove_dir_all(format!("saves/{name}"))?;
             // the creation failed
             return Err(SaveError::IOError);
         }
@@ -86,10 +91,7 @@ pub mod save {
     }
     /// delete the save specified and all backups
     pub fn delete(name: &str) -> Result<(), SaveError> {
-        folder_exists(format!("saves/{name}"))?;
-        if let Err(_) = std::fs::remove_dir_all(format!("saves/{name}")) {
-            return Err(SaveError::IOError);
-        }
+        std::fs::remove_dir_all(format!("saves/{name}"))?;
         Ok(())
     }
     /// returns a valid json with all of the properties for a save, including its name
@@ -132,7 +134,10 @@ pub mod save {
     /// update the access time of the world specified to now
     pub fn access(name: &str) -> Result<(), SaveError> {
         let mut values = HashMap::new();
-        values.insert("mc-manager-access-time".to_owned(), PropValue::String(now()));
+        values.insert(
+            "mc-manager-access-time".to_owned(),
+            PropValue::String(now()),
+        );
         write_properties(format!("saves/{name}/server.properties"), values)
     }
     /// iterate over the names of all saves avaiable
@@ -178,16 +183,10 @@ fn read_properties(path: impl AsRef<Path>) -> Result<HashMap<String, String>, Sa
     use std::io::{BufRead, BufReader};
     let mut out = HashMap::new();
 
-    let reader = match File::open(path) {
-        Ok(file) => BufReader::new(file),
-        Err(_) => return Err(SaveError::IOError),
-    };
+    let reader = BufReader::new(File::open(path)?);
 
     for line in reader.lines() {
-        let line = match line {
-            Ok(line) => line,
-            Err(_) => return Err(SaveError::IOError),
-        };
+        let line = line?;
         if !line.starts_with('#') {
             if let Some((key, value)) = line.split_once('=') {
                 out.insert(key.trim().to_owned(), value.to_owned());
@@ -209,16 +208,10 @@ fn write_properties(
     // the contents of the entire file
     let mut out = String::with_capacity(4 * 1024);
 
-    let reader = match File::open(path.clone()) {
-        Ok(file) => BufReader::new(file),
-        Err(_) => return Err(SaveError::IOError),
-    };
+    let reader = BufReader::new(File::open(path.clone())?);
 
     for line in reader.lines() {
-        let line = match line {
-            Ok(line) => line,
-            Err(_) => return Err(SaveError::IOError),
-        };
+        let line = line?;
         if !line.starts_with('#') {
             if let Some((raw_key, _)) = line.split_once('=') {
                 if let Some(new_value) = values.remove(raw_key.trim()) {
@@ -241,9 +234,7 @@ fn write_properties(
         out += "\r\n";
     }
 
-    if let Err(_) = std::fs::write(path, out) {
-        return Err(SaveError::IOError);
-    }
+    std::fs::write(path, out)?;
 
     Ok(())
 }
