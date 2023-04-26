@@ -6,6 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+chrono = "0.4.24"
 const-str = "0.5.4"
 serde = { version = "1.0.160", features = ["derive", "serde_derive"] }
 static_dir = "0.2.0"

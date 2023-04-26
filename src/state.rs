@@ -1,15 +1,18 @@
-
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::Path;
 
-/// describes the value of a property
-/*#[derive(Clone)]
-enum PropValue {
-    Bool(bool),
+/// holds the value of a property
+///
+/// can be used in a deserializable type to accept any of the below
+#[derive(Clone, Deserialize)]
+#[serde(untagged)]
+pub enum PropValue {
+    Boolean(bool),
     String(String),
     Int(i64),
     Uint(u64),
-}*/
+}
 
 /// describes the type of a property and its default value
 #[derive(Clone)]
@@ -121,16 +124,16 @@ pub mod save {
         Ok(out)
     }
     /// modifies one property of the save
-    pub fn modify(name: &str, key: &str, value: Option<&str>) -> Result<(), SaveError> {
-        if PROPERTIES.iter().filter(|(_, name, _, _)| *name == key).map(|(access, _, _, _)| *access).next() == Some(PropAccess::Write) {
-            write_properties(format!("saves/{name}/save.properties"), key, value)   
-        } else {
-            Err(SaveError::PropertyNotFound)
-        }
+    pub fn modify(name: &str, values: HashMap<String, PropValue>) -> Result<(), SaveError> {
+        folder_exists(format!("saves/{name}"))?;
+        validate_properties(&values, PropAccess::Write)?;
+        write_properties(format!("saves/{name}/server.properties"), values)
     }
     /// update the access time of the world specified to now
     pub fn access(name: &str) -> Result<(), SaveError> {
-        write_properties(format!("saves/{name}/save.properties"), "mc-manager-access-time", Some(&now()))
+        let mut values = HashMap::new();
+        values.insert("mc-manager-access-time".to_owned(), PropValue::String(now()));
+        write_properties(format!("saves/{name}/server.properties"), values)
     }
     /// iterate over the names of all saves avaiable
     pub fn iter() -> Result<SaveIter, SaveError> {
@@ -198,17 +201,13 @@ fn read_properties(path: impl AsRef<Path>) -> Result<HashMap<String, String>, Sa
 /// writes the propertie to the file
 fn write_properties(
     path: impl AsRef<Path> + Clone,
-    key: &str,
-    value: Option<&str>,
+    mut values: HashMap<String, PropValue>,
 ) -> Result<(), SaveError> {
     use std::fs::File;
     use std::io::{BufRead, BufReader};
 
     // the contents of the entire file
     let mut out = String::with_capacity(4 * 1024);
-
-    // keeps track if the key was already found and set
-    let mut found = false;
 
     let reader = match File::open(path.clone()) {
         Ok(file) => BufReader::new(file),
@@ -220,16 +219,13 @@ fn write_properties(
             Ok(line) => line,
             Err(_) => return Err(SaveError::IOError),
         };
-        if !found && !line.starts_with('#') {
+        if !line.starts_with('#') {
             if let Some((raw_key, _)) = line.split_once('=') {
-                if raw_key.trim() == key {
-                    found = true;
-                    if let Some(value) = value {
-                        out += raw_key;
-                        out += "=";
-                        out += value;
-                        out += "\r\n";
-                    }
+                if let Some(new_value) = values.remove(raw_key.trim()) {
+                    out += raw_key;
+                    out += "=";
+                    out += &new_value.to_value();
+                    out += "\r\n";
                     continue;
                 }
             }
@@ -238,22 +234,89 @@ fn write_properties(
         out += "\r\n";
     }
 
-    if !found {
-        if let Some(value) = value {
-            out += &key;
-            out += "=";
-            out += value;
-            out += "\r\n";
-        } else {
-            // the key was not found, and we are supposed to delete it
-            return Ok(());
-        }
+    for (key, value) in values {
+        out += &key;
+        out += "=";
+        out += &value.to_value();
+        out += "\r\n";
     }
 
     if let Err(_) = std::fs::write(path, out) {
         return Err(SaveError::IOError);
     }
 
+    Ok(())
+}
+
+fn validate_properties(
+    values: &HashMap<String, PropValue>,
+    access_needed: PropAccess,
+) -> Result<(), SaveError> {
+    for (key, value) in values.iter() {
+        if let Some((access, ty)) = PROPERTIES
+            .iter()
+            .filter(|(_, name, _, _)| *name == key)
+            .map(|(access, _, ty, _)| (*access, ty))
+            .next()
+        {
+            match (access_needed, access) {
+                (_, PropAccess::Write)
+                | (PropAccess::None, _)
+                | (PropAccess::Read, PropAccess::Read) => match ty {
+                    PropType::Bool(_) => {
+                        if let PropValue::Boolean(_) = value {
+                            continue;
+                        }
+                    }
+                    PropType::String(_) => {
+                        if let PropValue::String(_) = value {
+                            continue;
+                        }
+                    }
+                    PropType::Int(_, min, max) => {
+                        if let PropValue::Int(value) = value {
+                            if value >= min && value <= max {
+                                continue;
+                            }
+                        } else if let PropValue::Uint(value) = value {
+                            if let Ok(value) = i64::try_from(*value) {
+                                if value >= *min && value <= *max {
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                    PropType::Uint(_, min, max) => {
+                        if let PropValue::Uint(value) = value {
+                            if value >= min && value <= max {
+                                continue;
+                            }
+                        } else if let PropValue::Int(value) = value {
+                            if let Ok(value) = u64::try_from(*value) {
+                                if value >= *min && value <= *max {
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                    PropType::Datetime => {
+                        if let PropValue::String(value) = value {
+                            if value.len() == 19 {
+                                if let Ok(_) = chrono::NaiveDateTime::parse_from_str(
+                                    value,
+                                    "%Y-%m-%d %H:%M:%S",
+                                ) {
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                },
+                _ => {}
+            }
+        }
+        return Err(SaveError::PropertyNotFound);
+    }
     Ok(())
 }
 
@@ -317,6 +380,22 @@ fn append_json_string(out: &mut String, text: &str) {
         }
     }
     *out += "\"";
+}
+
+impl PropValue {
+    fn to_value(&self) -> String {
+        match self {
+            PropValue::Boolean(true) => "true".to_owned(),
+            PropValue::Boolean(false) => "false".to_owned(),
+            PropValue::String(value) => {
+                let mut out = String::with_capacity(value.len() + 16);
+                append_json_string(&mut out, value);
+                out
+            }
+            PropValue::Int(value) => value.to_string(),
+            PropValue::Uint(value) => value.to_string(),
+        }
+    }
 }
 
 fn generate_default_properties(version: &str) -> String {

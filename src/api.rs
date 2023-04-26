@@ -1,13 +1,15 @@
 
-use crate::state::{save, SaveError};
+use std::collections::HashMap;
+
+use crate::state::{save, SaveError, PropValue};
 use crate::warp_utils::{catch, WarpResult};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use warp::Reply;
 use warp::reply::Response;
 
 // APIS //
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize)]
 pub struct CreateSave {
     name: String,
     version: String,
@@ -19,7 +21,19 @@ impl CreateSave {
     }
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize)]
+pub struct ModifySave {
+    name: String,
+    values: HashMap<String, PropValue>,
+}
+
+impl ModifySave {
+    pub fn post(self) -> WarpResult<Response> {
+        save::modify(&self.name, self.values).map(|_| warp::reply().into_response()).into()
+    }
+}
+
+#[derive(Deserialize)]
 pub struct DeleteSave {
     name: String,
 }
