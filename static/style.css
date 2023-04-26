@@ -1,0 +1,261 @@
+
+
+@font-face {
+    font-family: 'Minecraft';
+    src: url('minecraft.ttf');
+}
+
+.shadow {
+    text-shadow: 3px 3px #3F3F3F;
+}
+
+.dark-shadow {
+    text-shadow: 3px 3px #2A2A2A;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    flex-grow: 0;
+    flex-shrink: 0;
+}
+
+:root {
+    --btn-size: 30px;
+}
+
+body {
+    font-family: 'Minecraft', Tahoma;
+    font-size: 16px;
+    font-smooth: never;
+    -webkit-font-smoothing : none;
+    color: white;
+    width: 100%;
+    height: 100vh;
+    max-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+input {
+    background-color: black;
+    text-shadow: 3px 3px #2A2A2A;
+    color: #CCCCCC;
+    border: 2px solid rgb(166, 166, 166);
+    font-family: 'Minecraft', Tahoma;
+    font-size: 16px;
+    padding: 7px 10px;
+    outline: none;
+}
+input[value=""] {
+    text-shadow: 3px 3px #151515;
+    color: #555555;
+}
+
+button {
+    font-family: 'Minecraft', Tahoma;
+    font-size: 16px;
+    color: white;
+    text-shadow: 3px 3px #3F3F3F;
+	height: 45px;
+	cursor: pointer;
+	overflow: hidden;
+	white-space: nowrap;
+	user-select: none;
+    text-align: center;
+	background: #999 url('bgbtn.png') center / cover;
+	border: 2px solid #000;
+    box-shadow: inset -2px -4px #0006, inset 2px 2px #FFF7;
+}
+
+button.disabled {
+    box-shadow: none;
+    pointer-events: none;
+}
+
+button.disabled span {
+    background-color: rgba(0, 0, 0, .55);
+    color: #AAA;
+}
+
+button span {
+    width: 100%;
+    height: calc(100% - 5px);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding-bottom: 5px;
+}
+
+button:hover {
+    text-shadow: 2px 2px #202013CC;
+    color: #FFFFA0;
+}
+
+button:hover span {
+    background-color: rgba(100, 100, 255, .45);
+}
+
+/*button:active {
+    box-shadow: inset -2px -4px #0004, inset 2px 2px #FFF5;
+}*/
+
+button:active span {
+	position: relative;
+	top: 1px;
+	left: 1px;
+}
+
+#search-bar {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding-top: 10px;
+    padding-bottom: 10px;
+    width: 100%;
+    z-index: 100;
+    position: sticky;
+    top: 0;
+    box-shadow: black 0px 7px 10px 0px;
+}
+
+#search-bar .space {
+    height: 10px;
+}
+
+#save-search {
+    width: calc(100% - 140px);
+}
+
+#saves-box {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding-top: 10px;
+    /* padding-bottom = height of #buttons-bar + 10px */
+    padding-bottom: 170px;
+    user-select: none;
+}
+
+#buttons-bar {
+    box-shadow: black 0px -7px 10px 0px;
+    padding: 30px;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    row-gap: 10px;
+    column-gap: 20px;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: calc(100% - 60px);
+    z-index: 100;
+}
+#button-play {
+    grid-column-start: 1;
+    grid-column-end: 3;
+    grid-row-start: 1;
+    grid-row-end: 2;
+}
+#button-new {
+    grid-column-start: 3;
+    grid-column-end: 5;
+    grid-row-start: 1;
+    grid-row-end: 2;
+}
+
+.save {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    padding: 5px;
+    padding-left: 8px;
+    padding-right: 30px;
+    user-select: none;
+    cursor: pointer;
+    background-color: rgba(0, 0, 0, .5);
+    margin: 6px 3px;
+}
+.save.selected {
+    margin: 3px 0px;
+    border: solid 3px lightgray;
+}
+.save.online {
+    background: url("online.png");
+    background-color: rgba(0, 0, 0, .5);
+    background-repeat: no-repeat;
+    background-size: 30px 21px;
+    background-position: right 10px top 10px;
+}
+.save.offline {
+    background: url("offline.png");
+    background-color: rgba(0, 0, 0, .5);
+    background-repeat: no-repeat;
+    background-size: 30px 21px;
+    background-position: right 10px top 10px;
+}
+.save.loading {
+    background: url("loading.png");
+    background-color: rgba(0, 0, 0, .5);
+    background-repeat: no-repeat;
+    background-size: 30px 21px;
+    background-position: right 10px top 10px;
+}
+.save img {
+    width: 64px;    
+    height: 64px;
+    margin-right: 10px;
+}
+.save-data {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+}
+.save-line-1 {
+    margin-right: 15px;
+}
+.save-line-2, .save-line-3 {
+    color: #CCCCCC;
+
+}
+
+/*
+.mc-button {
+	height: var(--btn-size);
+	width: calc(var(--btn-size) * 10);
+	cursor: pointer;
+	overflow: hidden;
+	white-space: nowrap;
+	user-select: none;
+
+	background: #999 url('https://i.ibb.co/rb2TWXL/bgbtn.png') center / cover;
+	image-rendering: pixelated;
+	border: 2px solid #000;
+
+	&:hover .title {
+		background-color: rgba(100, 100, 255, .45);
+		text-shadow: 2px 2px #202013CC;
+		color: #FFFFA0;
+	}
+	&:active .title {
+		box-shadow: inset -2px -4px #0004, inset 2px 2px #FFF5;
+	}
+*/
+.dirt {
+    background-image: url('dirt.png');
+    background-repeat: repeat;
+    background-size: 64px 64px;
+    
+    image-rendering: optimizeSpeed;
+    image-rendering: -moz-crisp-edges;
+    image-rendering: -o-crisp-edges;
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: pixelated;
+    image-rendering: optimize-contrast;
+    -ms-interpolation-mode: nearest-neighbor;
+}
+
+.dirt.dark {
+    background-image: url('dirt-dark.png');
+}

@@ -5,7 +5,27 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Minecraft Server Manager</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="script.js"></script>
 </head>
 <body>
+    <div id="search-bar" class="saves-screen dirt">
+        <span class="shadow">Minecraft Server Manager</span>
+        <div class="space"></div>
+        <input type="text" id="save-search" placeholder="buscar mundo...">
+    </div>
+    <div id="saves-box" class="saves-screen dirt dark">
+        <table>
+            <tbody id="saves-container"></tbody>
+        </table>
+    </div>
+    <div id="buttons-bar" class="saves-screen dirt shadow">
+        <button id="button-play" class="disabled"><span>Iniciar mundo</span></button>
+        <button id="button-new"><span>Novo mundo</span></button>
+        <button id="button-edit" class="disabled"><span>Editar</span></button>
+        <button id="button-delete" class="disabled"><span>Apagar</span></button>
+        <button id="button-recreate" class="disabled"><span>Recriar</span></button>
+        <button id="button-restart" class="disabled"><span>Reiniciar</span></button>
+    </div>
 </body>
 </html>
