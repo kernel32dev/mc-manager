@@ -2,7 +2,7 @@
 
 @font-face {
     font-family: 'Minecraft';
-    src: url('minecraft.ttf');
+    src: url('assets/minecraft.ttf');
 }
 
 .shadow {
@@ -22,6 +22,62 @@
 
 :root {
     --btn-size: 30px;
+}
+
+.top-bar {
+    width: 100%;
+    z-index: 100;
+    position: sticky;
+    top: 0;
+    box-shadow: black 0px 7px 10px 0px;
+}
+
+.middle-bar-1 {
+    width: 100%;
+    padding-top: 10px;
+    /* padding-bottom = height of .buttons-bar2x1 with 1 row of buttons + 10px */
+    padding-bottom: calc(105px + 10px);
+    min-height: calc(100vh - 10px - 105px - 10px - 70px);
+}
+
+.middle-bar-2 {
+    width: 100%;
+    padding-top: 10px;
+    /* padding-bottom = height of .bottom-bar4x2 with 2 rows of buttons + 10px */
+    padding-bottom: calc(160px + 10px);
+    min-height: calc(100vh - 10px - 170px - 10px - 86px);
+}
+
+.bottom-bar-2x1 {
+    box-shadow: black 0px -7px 10px 0px;
+    padding: 30px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr;
+    row-gap: 10px;
+    column-gap: 20px;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: calc(100% - 60px);
+    z-index: 100;
+    background-position: right 10px bottom 10px;
+}
+
+.bottom-bar-4x2 {
+    box-shadow: black 0px -7px 10px 0px;
+    padding: 30px;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    row-gap: 10px;
+    column-gap: 20px;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: calc(100% - 60px);
+    z-index: 100;
+    background-position: right 10px bottom 10px;
 }
 
 body {
@@ -44,8 +100,11 @@ input {
     border: 2px solid rgb(166, 166, 166);
     font-family: 'Minecraft', Tahoma;
     font-size: 16px;
-    padding: 7px 10px;
+    padding: 5px 10px;
     outline: none;
+}
+input.wide {
+    width: calc(100% - 20px);
 }
 input[value=""] {
     text-shadow: 3px 3px #151515;
@@ -63,7 +122,7 @@ button {
 	white-space: nowrap;
 	user-select: none;
     text-align: center;
-	background: #999 url('bgbtn.png') center / cover;
+	background: #999 url('assets/bgbtn.png') center / cover;
 	border: 2px solid #000;
     box-shadow: inset -2px -4px #0006, inset 2px 2px #FFF7;
 }
@@ -106,21 +165,16 @@ button:active span {
 	left: 1px;
 }
 
-#search-bar {
+#saves-search-bar {
     display: flex;
     flex-direction: column;
     align-items: center;
     padding-top: 10px;
     padding-bottom: 10px;
-    width: 100%;
-    z-index: 100;
-    position: sticky;
-    top: 0;
-    box-shadow: black 0px 7px 10px 0px;
 }
 
-#search-bar .space {
-    height: 10px;
+#saves-search-bar input {
+    margin-top: 10px;
 }
 
 #save-search {
@@ -132,33 +186,16 @@ button:active span {
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding-top: 10px;
-    /* padding-bottom = height of #buttons-bar + 10px */
-    padding-bottom: 170px;
     user-select: none;
 }
 
-#buttons-bar {
-    box-shadow: black 0px -7px 10px 0px;
-    padding: 30px;
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr 1fr;
-    grid-template-rows: 1fr 1fr;
-    row-gap: 10px;
-    column-gap: 20px;
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    width: calc(100% - 60px);
-    z-index: 100;
-}
-#button-play {
+#saves-button-play {
     grid-column-start: 1;
     grid-column-end: 3;
     grid-row-start: 1;
     grid-row-end: 2;
 }
-#button-new {
+#saves-button-new {
     grid-column-start: 3;
     grid-column-end: 5;
     grid-row-start: 1;
@@ -182,21 +219,21 @@ button:active span {
     border: solid 3px lightgray;
 }
 .save.online {
-    background: url("online.png");
+    background: url("assets/online.png");
     background-color: rgba(0, 0, 0, .5);
     background-repeat: no-repeat;
     background-size: 30px 21px;
     background-position: right 10px top 10px;
 }
 .save.offline {
-    background: url("offline.png");
+    background: url("assets/offline.png");
     background-color: rgba(0, 0, 0, .5);
     background-repeat: no-repeat;
     background-size: 30px 21px;
     background-position: right 10px top 10px;
 }
 .save.loading {
-    background: url("loading.png");
+    background: url("assets/loading.png");
     background-color: rgba(0, 0, 0, .5);
     background-repeat: no-repeat;
     background-size: 30px 21px;
@@ -220,30 +257,49 @@ button:active span {
 
 }
 
-/*
-.mc-button {
-	height: var(--btn-size);
-	width: calc(var(--btn-size) * 10);
-	cursor: pointer;
-	overflow: hidden;
-	white-space: nowrap;
-	user-select: none;
+#create-screen-title {
+    display: block;
+    text-align: center;
+    width: 100%;
+    margin-top: 1em;
+    margin-bottom: 25px;
+}
 
-	background: #999 url('https://i.ibb.co/rb2TWXL/bgbtn.png') center / cover;
-	image-rendering: pixelated;
-	border: 2px solid #000;
+#create-input-area {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    width: 500px;
+    margin: 0 auto;
+    background-color: rgba(0, 0, 0, .3);
+}
 
-	&:hover .title {
-		background-color: rgba(100, 100, 255, .45);
-		text-shadow: 2px 2px #202013CC;
-		color: #FFFFA0;
-	}
-	&:active .title {
-		box-shadow: inset -2px -4px #0004, inset 2px 2px #FFF5;
-	}
-*/
+#create-input-area p {
+    margin-top: 20px;
+    width: 100%;
+}
+.create-input-version-area {
+    width: 100%;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+}
+.create-input-version-area input {
+    flex-grow: 1;
+    margin-right: 20px;
+}
+.create-input-version-area button {
+    width: 45px;
+}
+.create-input-version-area button span img {
+    width: 24px;
+    height: 24px;
+}
+
 .dirt {
-    background-image: url('dirt.png');
+    background-image: url('assets/dirt.png');
     background-repeat: repeat;
     background-size: 64px 64px;
     
@@ -257,5 +313,17 @@ button:active span {
 }
 
 .dirt.dark {
-    background-image: url('dirt-dark.png');
+    background-image: url('assets/dirt-dark.png');
+}
+
+.hide, .hide-2 {
+    display: none !important;
+}
+
+.wide {
+    width: 100%;
+}
+
+.dark-text {
+    color: gray;
 }
