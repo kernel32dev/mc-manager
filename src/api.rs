@@ -13,11 +13,12 @@ use warp::reply::Response;
 pub struct CreateSave {
     name: String,
     version: String,
+    values: HashMap<String, PropValue>,
 }
 
 impl CreateSave {
     pub fn post(self) -> WarpResult<Response> {
-        save::create(&self.name, &self.version).map(json_response).into()
+        save::create(&self.name, &self.version, self.values).map(json_response).into()
     }
 }
 
@@ -89,7 +90,7 @@ pub fn icons(save: String) -> WarpResult<warp::reply::WithHeader<Vec<u8>>> {
     if !is_safe(&save) {
         return WarpResult::BAD_REQUEST;
     }
-    const UNKNOWN_PNG: &[u8] = include_bytes!("../static/unknown.png");
+    const UNKNOWN_PNG: &[u8] = include_bytes!("../static/assets/unknown.png");
     let data = match std::fs::read(format!("saves/{save}/world/icon.png")) {
         Ok(data) => data,
         Err(_) => UNKNOWN_PNG.to_owned(),

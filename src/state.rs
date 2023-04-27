@@ -61,13 +61,14 @@ impl From<std::io::Error> for SaveError {
 
 pub mod save {
     use super::*;
-    /// creates the save with the versions specified and returns the same as load would
-    pub fn create(name: &str, version: &str) -> Result<String, SaveError> {
+    /// creates the save with the version specified and returns the same as load would
+    pub fn create(name: &str, version: &str, values: HashMap<String, PropValue>) -> Result<String, SaveError> {
         if !std::fs::metadata(format!("versions/{version}.jar")).is_ok() {
             return Err(SaveError::VersionNotFound);
         }
+        validate_properties(&values, PropAccess::Write)?;
         std::fs::create_dir(format!("saves/{name}"))?;
-        let properties = generate_default_properties(version);
+        let properties = generate_properties(version, &values);
         if (|| {
             // folder created successfully, move files into the folder
             std::fs::write(
@@ -217,7 +218,7 @@ fn write_properties(
                 if let Some(new_value) = values.remove(raw_key.trim()) {
                     out += raw_key;
                     out += "=";
-                    out += &new_value.to_value();
+                    new_value.to_prop_value(&mut out);
                     out += "\r\n";
                     continue;
                 }
@@ -230,7 +231,7 @@ fn write_properties(
     for (key, value) in values {
         out += &key;
         out += "=";
-        out += &value.to_value();
+        value.to_prop_value(&mut out);
         out += "\r\n";
     }
 
@@ -374,22 +375,18 @@ fn append_json_string(out: &mut String, text: &str) {
 }
 
 impl PropValue {
-    fn to_value(&self) -> String {
+    fn to_prop_value(&self, out: &mut String) {
         match self {
-            PropValue::Boolean(true) => "true".to_owned(),
-            PropValue::Boolean(false) => "false".to_owned(),
-            PropValue::String(value) => {
-                let mut out = String::with_capacity(value.len() + 16);
-                append_json_string(&mut out, value);
-                out
-            }
-            PropValue::Int(value) => value.to_string(),
-            PropValue::Uint(value) => value.to_string(),
+            PropValue::Boolean(true) => *out += "true",
+            PropValue::Boolean(false) => *out += "false",
+            PropValue::String(value) => *out += value,
+            PropValue::Int(value) => *out += &value.to_string(),
+            PropValue::Uint(value) => *out += &value.to_string(),
         }
     }
 }
 
-fn generate_default_properties(version: &str) -> String {
+fn generate_properties(version: &str, values: &HashMap<String, PropValue>) -> String {
     let mut out = String::new();
     let now = now();
     for (access, name, ty, _) in PROPERTIES.iter() {
@@ -400,6 +397,8 @@ fn generate_default_properties(version: &str) -> String {
         out += "=";
         if *name == "mc-manager-server-version" {
             out += version;
+        } else if let (PropAccess::Write, Some(value)) = (*access, values.get(*name)) {
+            value.to_prop_value(&mut out);
         } else {
             match ty {
                 PropType::Bool(true) => out += "true",
@@ -430,7 +429,7 @@ const PROPERTIES: [(PropAccess, &str, PropType, &str); 61] = [
     (PropAccess::Write,"enforce-whitelist",PropType::Bool(false),"Enforces the whitelist on the server. When this option is enabled, users who are not present on the whitelist (if it's enabled) get kicked from the server after the server reloads the whitelist file. false - No user gets kicked if not on the whitelist. true - Online users not on the whitelist get kicked."),
     (PropAccess::Write,"entity-broadcast-range-percentage",PropType::Uint(100, 10, 1000),"Controls how close entities need to be before being sent to clients. Higher values means they'll be rendered from farther away, potentially causing more lag. This is expressed the percentage of the default value. For example, setting to 50 will make it half as usual. This mimics the function on the client video settings (not unlike Render Distance, which the client can customize so long as it's under the server's setting)."),
     (PropAccess::Write,"force-gamemode",PropType::Bool(false),"Force players to join in the default game mode . false - Players join in the gamemode they left in. true - Players always join in the default gamemode."),
-    (PropAccess::Write,"function-permission-level",PropType::Uint(2, 1, 4),"Sets the default permission level for functions . See permission level for the details on the 4 levels."),
+    (PropAccess::Write,"function-permission-level",PropType::Uint(4, 1, 4),"Sets the default permission level for functions . See permission level for the details on the 4 levels."),
     (PropAccess::Write,"gamemode",PropType::Uint(0, 0, 3),"Defines the mode of gameplay . If a legacy gamemode number is specified, it is silently converted to a gamemode name. survival (0) creative (1) adventure (2) spectator (3)"),
     (PropAccess::Write,"generate-structures",PropType::Bool(true),"Defines whether structures (such as villages) can be generated. false - Structures are not generated in new chunks. true - Structures are generated in new chunks. Note: Dungeons still generate if this is set to false."),
     (PropAccess::Write,"generator-settings",PropType::String("{}"),"The settings used to customize world generation. Follow its format and write the corresponding JSON string. Remember to escape all : with \\: ."),
@@ -440,7 +439,7 @@ const PROPERTIES: [(PropAccess, &str, PropType, &str); 61] = [
     (PropAccess::Write,"initial-enabled-packs",PropType::String("vanilla"),"Comma-separated list of datapacks to be enabled during world creation. Feature packs need to be explicitly enabled."),
     (PropAccess::None,"level-name",PropType::String("world"),"The \"level-name\" value is used as the world name and its folder name. The player may also copy their saved game folder here, and change the name to the same as that folder's to load it instead. Characters such as ' (apostrophe) may need to be escaped by adding a backslash before them."),
     (PropAccess::Write,"level-seed",PropType::String(""),"Sets a world seed for the player's world, as in Singleplayer. The world generates with a random seed if left blank. Some examples are: minecraft, 404, 1a2b3c."),
-    (PropAccess::Write,"level-type",PropType::String("minecraft:normal"),"Determines the world preset that is generated. Escaping \":\" is required when using a world preset ID, and the vanilla world preset ID's namespace ( minecraft: ) can be omitted. minecraft:normal - Standard world with hills, valleys, water, etc. minecraft: flat - A flat world with no features, can be modified with generator-settings . minecraft: large_biomes - Same as default but all biomes are larger. minecraft: amplified - Same as default but world-generation height limit is increased. minecraft: single_biome_surface - A buffet world which the entire overworld consists of one biome, can be modified with generator-settings . buffet - Only for 1.15 or before. Same as default unless generator-settings is set. default_1_1 - Only for 1.15 or before. Same as default, but counted as a different world type. customized - Only for 1.15 or before. After 1.13, this value is no different than default, but in 1.12 and before, it could be used to create a completely custom world."),
+    (PropAccess::Write,"level-type",PropType::String("normal"),"Determines the world preset that is generated. Escaping \":\" is required when using a world preset ID, and the vanilla world preset ID's namespace ( minecraft: ) can be omitted. minecraft:normal - Standard world with hills, valleys, water, etc. minecraft: flat - A flat world with no features, can be modified with generator-settings . minecraft: large_biomes - Same as default but all biomes are larger. minecraft: amplified - Same as default but world-generation height limit is increased. minecraft: single_biome_surface - A buffet world which the entire overworld consists of one biome, can be modified with generator-settings . buffet - Only for 1.15 or before. Same as default unless generator-settings is set. default_1_1 - Only for 1.15 or before. Same as default, but counted as a different world type. customized - Only for 1.15 or before. After 1.13, this value is no different than default, but in 1.12 and before, it could be used to create a completely custom world."),
     (PropAccess::Write,"max-chained-neighbor-updates",PropType::Int(1000000, -1, i64::MAX),"Limiting the amount of consecutive neighbor updates before skipping additional ones. Negative values remove the limit."),
     (PropAccess::Write,"max-players",PropType::Uint(20, 0, u32::MAX as u64),"The maximum number of players that can play on the server at the same time. Note that more players on the server consume more resources. Note also, op player connections are not supposed to count against the max players, but ops currently cannot join a full server. However, this can be changed by going to the file called ops.json in the player's server directory, opening it, finding the op that the player wants to change, and changing the setting called bypassesPlayerLimit to true (the default is false). This means that that op does not have to wait for a player to leave in order to join. Extremely large values for this field result in the client-side user list being broken."),
     (PropAccess::Write,"max-tick-time",PropType::Uint(60000, 0, u64::MAX),"The maximum number of milliseconds a single tick may take before the server watchdog stops the server with the message, A single server tick took 60.00 seconds (should be max 0.05); Considering it to be crashed, server will forcibly shutdown. Once this criterion is met, it calls System.exit(1). -1 - disable watchdog entirely (this disable option was added in 14w32a)"),
@@ -448,7 +447,7 @@ const PROPERTIES: [(PropAccess, &str, PropType, &str); 61] = [
     (PropAccess::Read,"mc-manager-server-version",PropType::String(""),"A variable for mc-manager, to keep track of what server version this is."),
     (PropAccess::Read,"mc-manager-create-time",PropType::Datetime,"A variable for mc-manager, to keep track when this save was created."),
     (PropAccess::Read,"mc-manager-access-time",PropType::Datetime,"A variable for mc-manager, to keep track when this save was last online."),
-    (PropAccess::Write,"motd",PropType::String("A Minecraft Server"),"This is the message that is displayed in the server list of the client, below the name. The MOTD supports color and formatting codes . The MOTD supports special characters, such as \"♥\". However, such characters must be converted to escaped Unicode form. An online converter can be found here . If the MOTD is over 59 characters, the server list may report a communication error."),
+    (PropAccess::Write,"motd",PropType::String("Um servidor de minecraft, gerenciando pelo mc-manager"),"This is the message that is displayed in the server list of the client, below the name. The MOTD supports color and formatting codes . The MOTD supports special characters, such as \"♥\". However, such characters must be converted to escaped Unicode form. An online converter can be found here . If the MOTD is over 59 characters, the server list may report a communication error."),
     (PropAccess::Write,"network-compression-threshold",PropType::Uint(256, 0, u64::MAX),"By default it allows packets that are n-1 bytes big to go normally, but a packet of n bytes or more gets compressed down. So, a lower number means more compression but compressing small amounts of bytes might actually end up with a larger result than what went in. -1 - disable compression entirely 0 - compress everything Note: The Ethernet spec requires that packets less than 64 bytes become padded to 64 bytes. Thus, setting a value lower than 64 may not be beneficial. It is also not recommended to exceed the MTU, typically 1500 bytes."),
     (PropAccess::Write,"online-mode",PropType::Bool(true),"Server checks connecting players against Minecraft account database. Set this to false only if the player's server is not connected to the Internet. Hackers with fake accounts can connect if this is set to false! If minecraft.net is down or inaccessible, no players can connect if this is set to true. Setting this variable to off purposely is called \"cracking\" a server, and servers that are present with online mode off are called \"cracked\" servers, allowing players with unlicensed copies of Minecraft to join. true - Enabled. The server assumes it has an Internet connection and checks every connecting player. false - Disabled. The server does not attempt to check connecting players."),
     (PropAccess::Write,"op-permission-level",PropType::Uint(4, 0, 4),"Sets the default permission level for ops when using / op ."),
