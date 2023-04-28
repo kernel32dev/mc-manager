@@ -1,5 +1,12 @@
 
+document.addEventListener("DOMContentLoaded", main);
+
 // GLOBALS //
+
+let click_sound = null;
+
+let schema = null;
+let create_properties = null;
 
 let saves = {};
 let saves_elem = {};
@@ -18,7 +25,13 @@ function api(method, path, payload) {
             if (response.length === 0) {
                 response = {};
             } else {
-                response = JSON.parse(response);
+                try {
+                    response = JSON.parse(response);
+                } catch (e) {
+                    console.log(response);
+                    reject(e);
+                    return;
+                }
             }
             if (r.status === 200) {
                 resolve(response);
@@ -45,12 +58,16 @@ function api(method, path, payload) {
     });
 }
 
-function api_list_versions() {
+function api_fetch_versions() {
     return api("GET", "/api/versions", undefined);
 }
 
-function api_list_saves() {
+function api_fetch_saves() {
     return api("GET", "/api/saves", undefined);
+}
+
+function api_fetch_schema() {
+    return api("GET", "/api/schema", undefined);
 }
 
 function api_create_save(name, version, values) {
@@ -58,7 +75,7 @@ function api_create_save(name, version, values) {
 }
 
 function api_modify_save(name, values) {
-    return api("POST", "/api/create_save", {name, values});
+    return api("POST", "/api/modify_save", {name, values});
 }
 
 function api_delete_save(name) {
@@ -103,133 +120,25 @@ function create_save(save) {
     return save_div;
 }
 
-document.addEventListener("DOMContentLoaded", function() {
-    // add sound to all buttons
-    let click_sound = createAudio("assets/click.mp3", 0.4);
-    forEach(document.getElementsByTagName("button"), function(button) {
-        button.addEventListener("click", click_sound);
-    });
-    // initialize saves-screen
-    document.body.addEventListener("keydown", function(ev) {
-        if (ev.key === "Escape") unselect_save();
-    });
-    document.getElementById("saves-button-delete").addEventListener("click", function() {
-        if (selected === null) return;
-        let name = selected;
-        api_delete_save(name).then(function() {
-            if (selected === name) unselect_save();
-            saves_elem[name].remove();
-            delete saves[name];
-            delete saves_elem[name];
-        }).catch(console.error);
-    });
-    api_list_saves().then(function(response) {
-        document.getElementById("saves-container").innerHTML = "";
-        forEach(response.saves, create_save);
-    });
+function modify_save(name, values) {
+    let save = saves[name];
+    for (key in values) {
+        save[key] = values[key];
+    }
+}
 
-    // initialize create-screen
-
-    // enums for button properties
-    const ENUMS = {
-        "gamemode": ["Modo Sobrevivência", "Modo Criativo", "Modo Aventura", "Modo Spectador"],
-        "difficulty": ["Pacífico", "Fácil", "Médio", "Difícil"],
-        "boolean": ["Não", "Sim"],
-        "level-type": ["Normal", "Plano", "Grandes Biomas", "Aplificado"]
-    };
-
-    // validators for input properties
-    const VALIDATORS = {
-        text(elem) {
-            return true;
-        },
-        int(elem) {
-            if (!/^\d+$/.test(elem.value.trim())) {
-                return false;
-            }
-            let number = Number(elem.value);
-            if (typeof elem.dataset.min === "string" && number < Number(elem.dataset.min)) {
-                return false;
-            }
-            if (typeof elem.dataset.max === "string" && number > Number(elem.dataset.max)) {
-                return false;
-            }
-            return true;
-        },
-    };
-
-    forEach(document.getElementsByClassName("create-param"), function(elem) {
-        if (elem.tagName === "BUTTON") {
-            elem.addEventListener("click", function() {
-                let value = Number(elem.dataset.value) + 1;
-                let enum_list = ENUMS[elem.dataset.type];
-                if (value >= enum_list.length) value = 0;
-                elem.firstElementChild.innerText = enum_list[value];
-                elem.dataset.value = value;
-            });
-        }
-    });
-    document.getElementById("create-input-search-version").addEventListener("click", function() {
-        alert("TODO: add a version list");
-    });
-    document.getElementById("create-button-confirm").addEventListener("click", function() {
-        let name_elem = document.getElementById("create-param-name");
-        let name_version = document.getElementById("create-param-version");
-        let name = name_elem.value.trim();
-        // TODO: validate name
-        let version = name_version.value.trim();
-        // TODO: validate version
-        let values = {};
-        forEach(document.getElementsByClassName("create-param"), function(param_elem) {
-            /** @type {HTMLElement} */ 
-            let elem = param_elem;
-            if (elem.tagName === "BUTTON") {
-                if (elem.dataset.type === "boolean") {
-                    values[elem.dataset.prop] = elem.dataset.value !== "0";
-                } else {
-                    values[elem.dataset.prop] = Number(elem.dataset.value);
-                }
-            } else if (elem.tagName === "INPUT") {
-                if (!VALIDATORS[elem.dataset.type](elem)) {
-                    elem.focus();
-                    values = null;
-                    return FOR_EACH_BREAK;
-                }
-                if (elem.dataset.type === "int") {
-                    values[elem.dataset.prop] = Number(elem.value);
-                } else {
-                    values[elem.dataset.prop] = elem.value.trim();
-                }
-            }
-        });
-        if (values === null) return;
-        if (values["level-type"] !== undefined) {
-            values["level-type"] = ["normal", "flat", "large_biomes", "amplified"][values["level-type"]];
-        }
-        let confirm_button = document.getElementById("create-button-confirm");
-        let cancel_button = document.getElementById("create-button-cancel");
-        confirm_button.classList.add("disabled");
-        cancel_button.classList.add("disabled");
-        api_create_save(name, version, values).then(function(response) {
-            console.log("success", response);
-            confirm_button.classList.remove("disabled");
-            cancel_button.classList.remove("disabled");
-            create_save(response);
-            select_save(response.name);
-            show_screen("saves-screen");
-        }).catch(function(response) {
-            console.log("error", response);
-            confirm_button.classList.remove("disabled");
-            cancel_button.classList.remove("disabled");
-
-        });
-    });
-});
-
-// HELPER FUNCTIONS //
+function delete_save(name) {
+    if (selected === name) unselect_save();
+    saves_elem[name].remove();
+    delete saves[name];
+    delete saves_elem[name];
+}
 
 function show_screen(screen) {
-    const SCREENS = ["saves-screen", "create-screen"];
+    const SCREENS = ["saves-screen", "create-screen", "modify-screen"];
+    if (selected === null && screen === "modify-screen") {
+        return;
+    }
     for (let i = 0; i < SCREENS.length; i++) {
         let elements = document.getElementsByClassName(SCREENS[i]);
         let hide = SCREENS[i] !== screen;
@@ -239,17 +148,123 @@ function show_screen(screen) {
     }
     if (screen === "create-screen") {
         document.getElementById("create-param-name").focus();
+    } else if (screen === "modify-screen") {
+        let save = saves[selected];
+        foreach(document.getElementsByClassName("modify-param"), function(elem) {
+            param_load(elem, save);
+        });
     }
 }
+
+function main() {
+
+    // add sound to all buttons
+    click_sound = document.createElement("audio");
+    click_sound.src = "assets/click.mp3";
+    click_sound.volume = 0.4;
+    click_sound.load();
+    foreach(document.getElementsByTagName("button"), function(button) {
+        button.addEventListener("click", play_click_sound);
+    });
+
+    // initialize saves-screen
+    document.body.addEventListener("keydown", function(ev) {
+        if (ev.key === "Escape") unselect_save();
+    });
+    document.getElementById("saves-button-delete").addEventListener("click", function() {
+        if (selected === null) return;
+        alert("TODO: add confirm screen here");
+        let name = selected;
+        api_delete_save(name).then(function() {
+            delete_save(name);
+        }).catch(console.error);
+    });
+    document.getElementById("saves-button-edit").addEventListener("click", function() {
+        show_screen("modify-screen");
+    });
+    api_fetch_saves().then(function(response) {
+        let old_selected = selected;
+        unselect_save();
+        clear_elem(document.getElementById("saves-container"));
+        foreach(response.saves, create_save);
+        if (old_selected !== null) select_save(old_selected);
+    }).catch(console.error);
+
+    // initialize create-screen and modify-screen input fields
+
+    api_fetch_schema().then(function(response) {
+        schema = response.schema;
+        create_properties = response.create_properties;
+        let create_area = document.getElementById("create-input-area");
+        foreach(create_properties, function(create_property) {
+            let elem = param_setup(create_property);
+            elem.classList.add("create-param", "wide");
+            create_area.append(create_p(schema[create_property].label));
+            create_area.append(elem);
+        });
+        create_area.append(create_p());
+        let modify_area = document.getElementById("modify-input-area");
+        let modify_properties = Object.keys(schema);
+        modify_properties.sort();
+        foreach(modify_properties, function(modify_property) {
+            let elem = param_setup(modify_property);
+            elem.classList.add("modify-param", "wide");
+            modify_area.append(create_p(schema[modify_property].label));
+            modify_area.append(elem);
+        });
+        modify_area.append(create_p());
+    }).catch(console.error);
+
+    // initialize create-screen buttons
+
+    document.getElementById("create-input-search-version").addEventListener("click", function() {
+        alert("TODO: add a version list");
+    });
+    document.getElementById("create-button-confirm").addEventListener("click", function() {
+        let name_elem = document.getElementById("create-param-name");
+        let version_elem = document.getElementById("create-param-version");
+        if (!validate_name(name_elem)) return;
+        if (!validate_version(version_elem)) return;
+        let name = name_elem.value.trim();
+        let version = version_elem.value.trim();
+        let values = param_values("create-param");
+        if (values === null) return;
+        disable("create-button-confirm", "create-button-cancel");
+        api_create_save(name, version, values).then(function(response) {
+            enable("create-button-confirm", "create-button-cancel");
+            create_save(response);
+            select_save(response.name);
+            show_screen("saves-screen");
+        }).catch(function(response) {
+            enable("create-button-confirm", "create-button-cancel");
+            console.error(response);
+        });
+    });
+
+    // initialize modify-screen buttons
+
+    document.getElementById("modify-button-confirm").addEventListener("click", function() {
+        let values = param_values("modify-param");
+        if (values === null) return;
+        disable("modify-button-confirm", "modify-button-cancel");
+        let name = selected;
+        api_modify_save(name, values).then(function(response) {
+            enable("modify-button-confirm", "modify-button-cancel");
+            modify_save(name, values);
+            show_screen("saves-screen");
+        }).catch(function(response) {
+            enable("modify-button-confirm", "modify-button-cancel");
+            console.error(response);
+        });
+    });
+}
+
+// HELPER FUNCTIONS //
 
 function select_save(name) {
     if (selected === name) return;
     if (selected === null) {
-        document.getElementById("saves-button-play").classList.remove("disabled");
-        document.getElementById("saves-button-edit").classList.remove("disabled");
-        document.getElementById("saves-button-delete").classList.remove("disabled");
-        document.getElementById("saves-button-recreate").classList.remove("disabled");
-        document.getElementById("saves-button-restart").classList.remove("disabled");
+        enable("saves-button-play", "saves-button-edit", "saves-button-delete", "saves-button-restart");
     } else {
         saves_elem[selected].classList.remove("selected");
     }
@@ -261,33 +276,228 @@ function unselect_save() {
     if (selected === null) return;
     saves_elem[selected].classList.remove("selected");
     selected = null;
-    document.getElementById("saves-button-play").classList.add("disabled");
-    document.getElementById("saves-button-edit").classList.add("disabled");
-    document.getElementById("saves-button-delete").classList.add("disabled");
-    document.getElementById("saves-button-recreate").classList.add("disabled");
-    document.getElementById("saves-button-restart").classList.add("disabled");
+    disable("saves-button-play", "saves-button-edit", "saves-button-delete", "saves-button-restart");
 }
 
-const FOR_EACH_BREAK = false;
-
-function forEach(array, callback) {
-    for (let i = 0; i < array.length; i++) {
-        if (callback(array[i], i, array) === false) break;
+// creates an element that accepts typed input from the user
+function param_setup(prop_name) {
+    let prop = schema[prop_name];
+    let elem;
+    if (prop.type.name === "boolean") {
+        elem = document.createElement("button");
+        let span = document.createElement("span");
+        elem.dataset.value = prop.type["default"];
+        span.innerText = prop.type["default"] ? "Sim" : "Não";
+        elem.addEventListener("click", function() {
+            play_click_sound();
+            if (elem.dataset.value === "0") {
+                elem.dataset.value = "1";
+                elem.firstElementChild.innerText = "Sim";
+            } else {
+                elem.dataset.value = "0";
+                elem.firstElementChild.innerText = "Não";
+            }
+        });
+        elem.append(span);
+    } else if (prop.type.name === "integer-enum") {
+        elem = document.createElement("button");
+        let span = document.createElement("span");
+        elem.dataset.value = prop.type["default"];
+        span.innerText = prop.type.members[prop.type["default"]];
+        elem.addEventListener("click", function() {
+            play_click_sound();
+            let value = Number(elem.dataset.value) + 1;
+            if (value >= prop.type.members.length) value = 0;
+            elem.firstElementChild.innerText = prop.type.members[value];
+            elem.dataset.value = value;
+        });
+        elem.append(span);
+    } else if (prop.type.name === "string-enum") {
+        elem = document.createElement("button");
+        let span = document.createElement("span");
+        elem.dataset.value = prop.type["default"];
+        span.innerText = prop.type.members[prop.type["default"]];
+        elem.addEventListener("click", function() {
+            play_click_sound();
+            let value = Number(elem.dataset.value) + 1;
+            if (value >= prop.type.members.length) value = 0;
+            elem.firstElementChild.innerText = prop.type.members[value][0];
+            elem.dataset.value = value;
+        });
+        elem.append(span);
+    } else {
+        elem = document.createElement("input");
+        elem.value = prop.type["default"];
     }
+    elem.classList.toggle("disabled", prop.access !== "write");
+    elem.dataset.prop = prop_name;
+    return elem;
 }
 
-function createAudio(src, volume) {
-    let audio = document.createElement("audio");
-    audio.src = src;
-    audio.volume = volume;
-    audio.load();
-    return function() {
-        try {
-            audio.pause();
-            audio.currentTime = 0;
-            audio.play().catch(console.error);
-        } catch (e) {
-            console.error(e);
+// calls param_value for all elems, and returns null if one fails
+// if elems is a string, all elems of that class name are used instead
+function param_values(elems) {
+    if (typeof elems === "string") {
+        elems = document.getElementsByClassName(elems);
+    }
+    let values = {};
+    for (let i = 0; i < elems.length; i++) {
+        if (!param_value(elems[i], values)) {
+            return null;
         }
     }
+    return values;
+}
+
+// takes a param elem, validates its value, and adds its value to the values object
+// returns false if validation fails
+function param_value(elem, values) {
+    if (elem.classList.contains("disabled")) {
+        return true;
+    }
+    let prop = schema[elem.dataset.prop];
+    let value;
+    if (elem.tagName === "BUTTON") {
+        if (prop.type.name === "boolean") {
+            value = elem.dataset.value !== "0";
+        } else if (prop.type.name === "integer-enum") {
+            value = Number(elem.dataset.value);
+        } else if (prop.type.name === "string-enum") {
+            value = prop.type.members[Number(elem.dataset.value)][1];
+        } else {
+            throw new Error("unknown property type for button " + prop.type.name);
+        }
+    } else if (elem.tagName === "INPUT") {
+        if (prop.type.name === "integer") {
+            if (!validate_integer(elem, prop.type.min, prop.type.max)) {
+                elem.focus();
+                return false;
+            }
+            value = Number(elem.value.trim());
+        } else {
+            value = elem.value.trim();
+        }
+    }
+    values[elem.dataset.prop] = value;
+    return true;
+}
+
+// takes the value from the save into the element
+function param_load(elem, save) {
+    let prop = schema[elem.dataset.prop];
+    let value = save[elem.dataset.prop];
+    if (elem.tagName === "BUTTON") {
+        if (prop.type.name === "boolean") {
+            if (value) {
+                elem.dataset.value = "1";
+                elem.firstElementChild.innerText = "Sim";
+            } else {
+                elem.dataset.value = "0";
+                elem.firstElementChild.innerText = "Não";
+            }
+        } else if (prop.type.name === "integer-enum") {
+            elem.dataset.value = value;
+            elem.firstElementChild.innerText = prop.type.members[value];
+        } else if (prop.type.name === "string-enum") {
+            let index = 0;
+            for (; index < prop.type.members.length; index++) {
+                if (prop.type.members[index][1] === value) {
+                    break;
+                }
+            }
+            if (index >= prop.type.members.length) {
+                console.warn(`member ${value} of enum for ${elem.dataset.prop} not found, using default (${prop.type.members[prop.type["default"]][1]}) instead`);
+                index = prop.type["default"];
+            }
+            elem.dataset.value = index;
+            elem.firstElementChild.innerText = prop.type.members[index][0];
+        } else {
+            throw new Error("unknown property type for button " + prop.type.name);
+        }
+    } else if (elem.tagName === "INPUT") {
+        elem.value = value;
+    }
+}
+
+const FOR_EACH_BREAK = {};
+
+// class callback for each item in array, if the callback returns FOR_EACH_BREAK, the for quits early
+function foreach(array, callback) {
+    for (let i = 0; i < array.length; i++) {
+        if (callback(array[i], i, array) === FOR_EACH_BREAK) break;
+    }
+}
+
+// removes the disabled class to all elements/ids passed as arguments
+function enable() {
+    for (let i = 0; i < arguments.length; i++) {
+        let arg = arguments[i];
+        if (typeof arg === "string") {
+            document.getElementById(arg).classList.remove("disabled");
+        } else if (typeof arg === "object") {
+            arg.classList.remove("disabled");
+        }
+    }
+}
+
+// adds the disabled class to all elements/ids passed as arguments
+function disable() {
+    for (let i = 0; i < arguments.length; i++) {
+        let arg = arguments[i];
+        if (typeof arg === "string") {
+            document.getElementById(arg).classList.add("disabled");
+        } else if (typeof arg === "object") {
+            arg.classList.add("disabled");
+        }
+    }
+}
+
+// removes all children
+function clear_elem(elem) {
+    elem.innerHTML = "";
+    if (elem.firstChild) {
+        elem.firstChild.remove();
+    }
+}
+
+function play_click_sound() {
+    try {
+        click_sound.pause();
+        click_sound.currentTime = 0;
+        click_sound.play().catch(console.error);
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+function create_p(text) {
+    let p = document.createElement("p");
+    if (typeof text === "string") {
+        p.innerText = text;
+    } else {
+        p.innerHTML = "&nbsp;";
+    }
+    return p;
+}
+
+function validate_name(elem) {
+    return true;
+}
+
+function validate_version(elem) {
+    return true;
+}
+
+function validate_integer(elem, min, max) {
+    if (!/^-?\d+$/.test(elem.value.trim())) {
+        return false;
+    }
+    let number = Number(elem.value);
+    if (typeof min === "number" && number < min) {
+        return false;
+    }
+    if (typeof max === "number" && number > max) {
+        return false;
+    }
+    return true;
 }

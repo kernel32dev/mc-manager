@@ -9,27 +9,27 @@
     <script src="script.js"></script>
 </head>
 <body>
-    <div id="saves-search-bar" class="top-bar saves-screen dirt hide">
+    <div id="saves-search-bar" class="top-bar saves-screen dirt">
         <span class="shadow">Minecraft Server Manager</span>
         <input type="text" id="save-search" placeholder="buscar mundo...">
     </div>
-    <div id="saves-box" class="middle-bar-2 saves-screen dirt dark hide">
+    <div id="saves-box" class="middle-bar-2 saves-screen dirt dark">
         <table>
             <tbody id="saves-container"></tbody>
         </table>
     </div>
-    <div class="bottom-bar-4x2 saves-screen dirt shadow hide">
+    <div class="bottom-bar-4x2 saves-screen dirt shadow">
         <button id="saves-button-play" class="disabled"><span>Iniciar mundo</span></button>
         <button id="saves-button-new" onclick="show_screen('create-screen');unselect_save()"><span>Novo mundo</span></button>
         <button id="saves-button-edit" class="disabled"><span>Editar</span></button>
         <button id="saves-button-delete" class="disabled"><span>Apagar</span></button>
-        <button id="saves-button-recreate" class="disabled"><span>Recriar</span></button>
+        <button id="saves-button-refresh"><span>Recarregar</span></button>
         <button id="saves-button-restart" class="disabled"><span>Reiniciar</span></button>
     </div>
-    <div class="create-screen top-bar dirt">
+    <div class="create-screen top-bar dirt hide">
         <span id="create-screen-title" class="shadow">Criar novo mundo</span>
     </div>
-    <div id="create-input-box" class="create-screen dirt dark middle-bar-1">
+    <div id="create-input-box" class="create-screen dirt dark middle-bar-1 hide">
         <div id="create-input-area">
             <p>Nome do mundo</p>
             <input type="text" id="create-param-name" class="wide">
@@ -38,32 +38,21 @@
                 <input type="text" id="create-param-version" value="1.19">
                 <button id="create-input-search-version"><span><img src="assets/search.png"></span></button>
             </div>
-            <p>Descrição</p>
-            <input type="text" data-prop="motd" data-type="text" class="create-param wide">
-            <p>Seed</p>
-            <input type="text" data-prop="level-seed" data-type="text" class="create-param wide">
-            <p>Modo de jogo</p>
-            <button data-prop="gamemode" data-value="0" data-type="gamemode" class="create-param wide"><span>Modo Sobrevivência</span></button>
-            <p>Dificuldade</p>
-            <button data-prop="difficulty" data-value="3" data-type="difficulty" class="create-param wide"><span>Difícil</span></button>
-            <p>Porta TCP</p>
-            <input type="text" data-prop="server-port" data-type="int" data-min="1" data-max="65535" value="25565" class="create-param wide">
-            <p>Permitir PVP</p>
-            <button data-prop="pvp" data-value="1" data-type="boolean" class="create-param wide"><span>Sim</span></button>
-            <p>Número máximo de jogadores</p>
-            <input type="text" data-prop="max-players" data-type="int" data-min="1" data-max="10000" value="20" class="create-param wide">
-            <p>Permitir Command Blocks</p>
-            <button data-prop="enable-command-block" data-value="1" data-type="boolean" class="create-param wide"><span>Sim</span></button>
-            <p>Validar autenticidade da conta de Minecraft dos jogadores</p>
-            <button data-prop="online-mode" data-value="0" data-type="boolean" class="create-param wide"><span>Não</span></button>
-            <p>Tipo de mundo</p>
-            <button data-prop="level-type" data-value="0" data-type="level-type" class="create-param wide"><span>Normal</span></button>
-            <p>&nbsp;</p>
         </div>
     </div>
-    <div id="create-buttons-bar" class="create-screen shadow dirt bottom-bar-2x1">
+    <div id="create-buttons-bar" class="create-screen shadow dirt bottom-bar-2x1 hide">
         <button id="create-button-confirm"><span>Criar novo mundo</span></button>
         <button id="create-button-cancel" onclick="show_screen('saves-screen')"><span>Cancelar</span></button>
+    </div>
+    <div class="modify-screen top-bar dirt hide">
+        <span id="modify-screen-title" class="shadow">Editar mundo</span>
+    </div>
+    <div id="modify-input-box" class="modify-screen dirt dark middle-bar-1 hide">
+        <div id="modify-input-area"></div>
+    </div>
+    <div id="modify-buttons-bar" class="modify-screen shadow dirt bottom-bar-2x1 hide">
+        <button id="modify-button-confirm"><span>Salvar mudanças</span></button>
+        <button id="modify-button-cancel" onclick="show_screen('saves-screen')"><span>Cancelar</span></button>
     </div>
 </body>
 </html>

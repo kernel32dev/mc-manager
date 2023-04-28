@@ -1,4 +1,5 @@
 
+/* font styles */
 
 @font-face {
     font-family: 'Minecraft';
@@ -13,6 +14,8 @@
     text-shadow: 3px 3px #2A2A2A;
 }
 
+/* global styles */
+
 * {
     margin: 0;
     padding: 0;
@@ -23,6 +26,8 @@
 :root {
     --btn-size: 30px;
 }
+
+/* top-navigation styles */
 
 .top-bar {
     width: 100%;
@@ -79,6 +84,8 @@
     z-index: 100;
     background-position: right 10px bottom 10px;
 }
+
+/* tag styles */
 
 body {
     font-family: 'Minecraft', Tahoma;
@@ -155,15 +162,13 @@ button:hover span {
     background-color: rgba(100, 100, 255, .45);
 }
 
-/*button:active {
-    box-shadow: inset -2px -4px #0004, inset 2px 2px #FFF5;
-}*/
-
 button:active span {
 	position: relative;
 	top: 1px;
 	left: 1px;
 }
+
+/* saves-screen styles */
 
 #saves-search-bar {
     display: flex;
@@ -201,6 +206,8 @@ button:active span {
     grid-row-start: 1;
     grid-row-end: 2;
 }
+
+/* individual save styles */
 
 .save {
     display: flex;
@@ -257,6 +264,8 @@ button:active span {
 
 }
 
+/* create-screen styles */
+
 #create-screen-title {
     display: block;
     text-align: center;
@@ -298,6 +307,34 @@ button:active span {
     height: 24px;
 }
 
+/* modify-screen styles */
+
+#modify-screen-title {
+    display: block;
+    text-align: center;
+    width: 100%;
+    margin-top: 1em;
+    margin-bottom: 25px;
+}
+
+#modify-input-area {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    width: 500px;
+    margin: 0 auto;
+    background-color: rgba(0, 0, 0, .3);
+}
+
+#modify-input-area p {
+    margin-top: 20px;
+    width: 100%;
+}
+
+/* useful classes */
+
 .dirt {
     background-image: url('assets/dirt.png');
     background-repeat: repeat;
@@ -316,14 +353,10 @@ button:active span {
     background-image: url('assets/dirt-dark.png');
 }
 
-.hide, .hide-2 {
+.hide {
     display: none !important;
 }
 
 .wide {
     width: 100%;
-}
-
-.dark-text {
-    color: gray;
 }
