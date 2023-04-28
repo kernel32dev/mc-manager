@@ -171,6 +171,7 @@ function main() {
     });
 
     // initialize saves-screen
+
     document.body.addEventListener("keydown", function(ev) {
         if (ev.key === "Escape") unselect_save();
     });
@@ -181,6 +182,17 @@ function main() {
     });
     document.getElementById("saves-button-edit").addEventListener("click", function() {
         show_screen("modify-screen");
+    });
+    document.getElementById("saves-button-refresh").addEventListener("click", function() {
+        api_fetch_saves().then(function(response) {
+            let old_selected = selected;
+            unselect_save();
+            saves = {};
+            saves_elem = {};
+            clear_elem(document.getElementById("saves-container"));
+            foreach(response.saves, create_save);
+            if (old_selected !== null && saves[old_selected] !== undefined) select_save(old_selected);
+        }).catch(console.error);
     });
     api_fetch_saves().then(function(response) {
         let old_selected = selected;
