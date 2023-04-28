@@ -135,8 +135,8 @@ pub mod save {
             }
             *out += ",\"type\":";
             match &prop.ty {
-                PropType::Bool(true) => *out += r#"{"name":"bool","default":true}"#,
-                PropType::Bool(false) => *out += r#"{"name":"bool","default":false}"#,
+                PropType::Bool(true) => *out += r#"{"name":"boolean","default":true}"#,
+                PropType::Bool(false) => *out += r#"{"name":"boolean","default":false}"#,
                 PropType::String(value) => {
                     *out += r#"{"name":"string","default":"#;
                     append_json_string(out, value);
@@ -162,15 +162,15 @@ pub mod save {
                 }
                 PropType::Datetime => *out += r#"{"name":"string","default":""}"#,
                 PropType::IntEnum(value, members) => {
-                    *out += r#"{"name":"enum","default":"#;
+                    *out += r#"{"name":"integer-enum","default":"#;
                     *out += &value.to_string();
                     *out += r#","members":["#;
                     append_comma_separated(members.iter().map(|x| *x), out, append_json_string);
                     *out += "]}";
                 }
                 PropType::StrEnum(value, members) => {
-                    *out += r#"{"name":"enum","default":"#;
-                    append_json_string(out, members[*value].1);
+                    *out += r#"{"name":"string-enum","default":"#;
+                    *out += &value.to_string();
                     *out += r#","members":["#;
                     append_comma_separated(members.iter(), out, |out, member| {
                         *out += "[";
