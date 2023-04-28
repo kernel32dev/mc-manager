@@ -200,7 +200,7 @@ button:active span {
     grid-row-start: 1;
     grid-row-end: 2;
 }
-#saves-button-new {
+#saves-button-create {
     grid-column-start: 3;
     grid-column-end: 5;
     grid-row-start: 1;
@@ -220,31 +220,55 @@ button:active span {
     cursor: pointer;
     background-color: rgba(0, 0, 0, .5);
     margin: 6px 3px;
+    
+    background-color: rgba(0, 0, 0, .5);
+    background-repeat: no-repeat;
+    background-size: 30px 21px;
+    background-position: right 10px top 10px;
 }
 .save.selected {
     margin: 3px 0px;
     border: solid 3px lightgray;
 }
 .save.online {
-    background: url("assets/online.png");
-    background-color: rgba(0, 0, 0, .5);
-    background-repeat: no-repeat;
-    background-size: 30px 21px;
-    background-position: right 10px top 10px;
+    background-image: url("assets/status/loading-5.png");
 }
 .save.offline {
-    background: url("assets/offline.png");
-    background-color: rgba(0, 0, 0, .5);
-    background-repeat: no-repeat;
-    background-size: 30px 21px;
-    background-position: right 10px top 10px;
+    background-image: url("assets/status/offline.png");
 }
 .save.loading {
-    background: url("assets/loading.png");
-    background-color: rgba(0, 0, 0, .5);
-    background-repeat: no-repeat;
-    background-size: 30px 21px;
-    background-position: right 10px top 10px;
+    animation: anim-save-loading 1.5s linear 0s infinite;
+}
+.save.shutdown {
+    animation: anim-save-shutdown 1.5s linear 0s infinite;
+}
+@keyframes anim-save-loading {
+    0% { background-image: url("assets/status/loading-0.png"); }
+    14.99% { background-image: url("assets/status/loading-0.png"); }
+    15% { background-image: url("assets/status/loading-1.png"); }
+    29.99% { background-image: url("assets/status/loading-1.png"); }
+    30% { background-image: url("assets/status/loading-2.png"); }
+    44.99% { background-image: url("assets/status/loading-2.png"); }
+    45% { background-image: url("assets/status/loading-3.png"); }
+    59.99% { background-image: url("assets/status/loading-3.png"); }
+    60% { background-image: url("assets/status/loading-4.png"); }
+    74.99% { background-image: url("assets/status/loading-4.png"); }
+    75% { background-image: url("assets/status/loading-5.png"); }
+    100% { background-image: url("assets/status/loading-0.png"); }
+}
+@keyframes anim-save-shutdown {
+    0% { background-image: url("assets/status/shutdown-5.png"); }
+    14.99% { background-image: url("assets/status/shutdown-5.png"); }
+    15% { background-image: url("assets/status/shutdown-4.png"); }
+    29.99% { background-image: url("assets/status/shutdown-4.png"); }
+    30% { background-image: url("assets/status/shutdown-3.png"); }
+    44.99% { background-image: url("assets/status/shutdown-3.png"); }
+    45% { background-image: url("assets/status/shutdown-2.png"); }
+    59.99% { background-image: url("assets/status/shutdown-2.png"); }
+    60% { background-image: url("assets/status/shutdown-1.png"); }
+    74.99% { background-image: url("assets/status/shutdown-1.png"); }
+    75% { background-image: url("assets/status/shutdown-0.png"); }
+    100% { background-image: url("assets/status/shutdown-5.png"); }
 }
 .save img {
     width: 64px;    

@@ -70,6 +70,10 @@ function api_fetch_schema() {
     return api("GET", "/api/schema", undefined);
 }
 
+function api_fetch_status() {
+    return api("GET", "/api/status", undefined);
+}
+
 function api_create_save(name, version, values) {
     return api("POST", "/api/create_save", {name, version, values});
 }
@@ -80,6 +84,14 @@ function api_modify_save(name, values) {
 
 function api_delete_save(name) {
     return api("POST", "/api/delete_save", {name});
+}
+
+function api_start_save(name) {
+    return api("POST", "/api/start_save", {name});
+}
+
+function api_stop_save(name) {
+    return api("POST", "/api/stop_save", {name});
 }
 
 // DOM FUNCTIONS //
@@ -95,6 +107,7 @@ function create_saves(new_saves) {
 }
 
 function create_save(save) {
+    let name = save.name;
     let saves_container = document.getElementById("saves-container");
     let tr = document.createElement("tr");
     let td = document.createElement("td");
@@ -112,22 +125,37 @@ function create_save(save) {
     save_data.append(save_line_1);
     save_data.append(save_line_2);
     save_data.append(save_line_3);
-    img.setAttribute("src","/api/icons/" + save.name);
-    save_div.dataset.name = save.name;
-    save_div.classList.add("save");
-    tr.classList.toggle("hide", !search_matches(save.name))
+    img.setAttribute("src","/api/icons/" + name);
+    save_div.dataset.name = name;
+    save_div.classList.add("save", save.status);
+    tr.classList.toggle("hide", !search_matches(name))
     save_data.classList.add("save-data");
     save_line_1.classList.add("save-line", "save-line-1");
     save_line_2.classList.add("save-line", "save-line-2");
     save_line_3.classList.add("save-line", "save-line-3");
-    save_line_1.innerText = save.name;
+    save_line_1.innerText = name;
     save_line_2.innerText = "(" + save["mc-manager-create-time"].substr(0, 16) + ")";
     save_line_3.innerText = save["mc-manager-server-version"] + " - " + ["Modo Sobrevivência", "Modo Criativo", "Modo Aventura", "Modo Spectador"][save["gamemode"]];
     save_div.addEventListener('click', function() {
-        select_save(save.name);
+        select_save(name);
     });
-    saves[save.name] = save;
-    saves_elem[save.name] = save_div;
+    save_div.addEventListener('dblclick', function() {
+        if (save_div.classList.contains("offline")) {
+            api_start_save(name).then(function(response) {
+                save_div.classList.remove("offline");
+                save_div.classList.add("loading");
+                select_save(selected);
+            }).catch(console.error);
+        } else {
+            api_stop_save(name).then(function(response) {
+                save_div.classList.remove("loading", "online");
+                save_div.classList.add("shutdown");
+                select_save(selected);
+            }).catch(console.error);
+        }
+    });
+    saves[name] = save;
+    saves_elem[name] = save_div;
 }
 
 function modify_save(name, values) {
@@ -157,6 +185,7 @@ function show_screen(screen) {
         }
     }
     if (screen === "create-screen") {
+        unselect_save();
         document.getElementById("create-param-name").focus();
     } else if (screen === "modify-screen") {
         let save = saves[selected];
@@ -175,9 +204,28 @@ function update_filter() {
     });
 }
 
+function update_status(status) {
+    foreach(Object.values(saves), function(save) {
+        if (save.status !== status[save.name]) {
+            let elem = saves_elem[save.name];
+            let new_status = status[save.name];
+            if (new_status === undefined) {
+                new_status = "offline";
+            }
+            save.status = new_status;
+            elem.classList.remove("online", "offline", "loading", "shutdown");
+            elem.classList.add(new_status);
+            if (save.name === selected) {
+                select_save(selected);
+            }
+        }
+    });
+}
+
 function main() {
 
     // add sound to all buttons
+
     click_sound = document.createElement("audio");
     click_sound.src = "assets/click.mp3";
     click_sound.volume = 0.4;
@@ -192,18 +240,44 @@ function main() {
         if (ev.key === "Escape") unselect_save();
     });
     document.getElementById("saves-search").addEventListener("input", update_filter);
+    document.getElementById("saves-button-play").addEventListener("click", function() {
+        if (selected !== null) {
+            let save_div = saves_elem[selected];
+            if (save_div.classList.contains("offline")) {
+                api_start_save(selected).then(function(response) {
+                    save_div.classList.remove("offline");
+                    save_div.classList.add("loading");
+                    select_save(selected);
+                }).catch(console.error);
+            } else {
+                api_stop_save(selected).then(function(response) {
+                    save_div.classList.remove("loading", "online");
+                    save_div.classList.add("shutdown");
+                    select_save(selected);
+                }).catch(console.error);
+            }
+        }
+    });
+    document.getElementById("saves-button-create").addEventListener("click", function() {
+        show_screen("create-screen");
+    });
+    document.getElementById("saves-button-modify").addEventListener("click", function() {
+        alert("TODO: ensure selected is offline");
+        show_screen("modify-screen");
+    });
     document.getElementById("saves-button-delete").addEventListener("click", function() {
+        alert("TODO: ensure selected is offline");
         if (selected !== null) {
             show_screen("delete-screen");
         }
-    });
-    document.getElementById("saves-button-edit").addEventListener("click", function() {
-        show_screen("modify-screen");
     });
     document.getElementById("saves-button-refresh").addEventListener("click", function() {
         api_fetch_saves().then(function(response) {
             create_saves(response.saves);
         }).catch(console.error);
+    });
+    document.getElementById("saves-button-log").addEventListener("click", function() {
+        alert("TODO: create log")
     });
     api_fetch_saves().then(function(response) {
         create_saves(response.saves);
@@ -295,22 +369,35 @@ function main() {
             show_screen("saves-screen");
         }
     });
+
+    // setup status update
+
+    setInterval(function() {
+        api_fetch_status().then(update_status).catch(console.error);
+    }, 1000);
 }
 
 // HELPER FUNCTIONS //
 
 function select_save(name) {
-    if (selected === name) return;
+    if (selected === name) {
+        if (selected !== null) {
+            document.getElementById("saves-button-play").firstElementChild.innerText = saves_elem[selected].classList.contains("offline") ? "Iniciar mundo" : "Parar mundo";
+        }
+        return;
+    }
     if (!search_matches(name)) {
         unselect_save();
         return;
     }
     if (selected === null) {
-        enable("saves-button-play", "saves-button-edit", "saves-button-delete", "saves-button-restart");
+        enable("saves-button-play", "saves-button-modify", "saves-button-delete", "saves-button-log");
     } else {
         saves_elem[selected].classList.remove("selected");
     }
-    saves_elem[name].classList.add("selected");
+    let elem = saves_elem[name];
+    elem.classList.add("selected");
+    document.getElementById("saves-button-play").firstElementChild.innerText = elem.classList.contains("offline") ? "Iniciar mundo" : "Parar mundo";
     selected = name;
 }
 
@@ -318,7 +405,8 @@ function unselect_save() {
     if (selected === null) return;
     saves_elem[selected].classList.remove("selected");
     selected = null;
-    disable("saves-button-play", "saves-button-edit", "saves-button-delete", "saves-button-restart");
+    document.getElementById("saves-button-play").firstElementChild.innerText = "Iniciar mundo";
+    disable("saves-button-play", "saves-button-modify", "saves-button-delete", "saves-button-log");
 }
 
 // creates an element that accepts typed input from the user
