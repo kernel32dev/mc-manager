@@ -4,7 +4,7 @@ use crate::api::*;
 use crate::instances::stop_all_instances;
 use crate::utils::filters;
 
-const PORT: u16 = 3030;
+const PORT: u16 = 1234;
 
 pub fn serve(shutdown: Option<tokio::sync::oneshot::Receiver<()>>) {
     let apis = filters!(
@@ -37,11 +37,11 @@ pub fn serve(shutdown: Option<tokio::sync::oneshot::Receiver<()>>) {
     .build()
     .unwrap();
 
-    println!("[*] Minecraft Server Manager 127.0.0.1:{}", PORT);
+    println!("[*] Minecraft Server Manager *:{}", PORT);
 
     let _enter = rt.enter();
     rt.block_on(
-        warp::serve(routes).bind_with_graceful_shutdown(([127, 0, 0, 1], PORT), async move {
+        warp::serve(routes).bind_with_graceful_shutdown(([0, 0, 0, 0], PORT), async move {
             if let Some(shutdown) = shutdown {
                 shutdown.await.unwrap();
                 println!("[*] Stopping service");
