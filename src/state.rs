@@ -81,7 +81,7 @@ pub mod save {
                 continue;
             }
             out += ",\"";
-            out += name;
+            out += prop.name;
             out += "\":";
             if let Some(value) = properties.get(prop.name) {
                 match prop.ty {
@@ -122,84 +122,75 @@ pub mod save {
     pub fn schema() -> String {
         let mut out = String::with_capacity(24 * 1024);
         out += r#"{"schema":{"#;
-        for prop in PROPERTIES.iter() {
+        append_comma_separated(PROPERTIES.iter(), &mut out, |out, prop|{
             if prop.access == PropAccess::None {
-                continue;
+                return;
             }
-            append_json_string(&mut out, prop.name);
-            out += ":{";
+            append_json_string(out, prop.name);
+            *out += ":{";
             match prop.access {
-                PropAccess::Write => out += r#""access":"write""#,
-                PropAccess::Read => out += r#""access":"read""#,
+                PropAccess::Write => *out += r#""access":"write""#,
+                PropAccess::Read => *out += r#""access":"read""#,
                 PropAccess::None => unreachable!(),
             }
-            out += ",\"type\":";
+            *out += ",\"type\":";
             match &prop.ty {
-                PropType::Bool(true) => out += r#"{"name":"bool","default":true}"#,
-                PropType::Bool(false) => out += r#"{"name":"bool","default":false}"#,
+                PropType::Bool(true) => *out += r#"{"name":"bool","default":true}"#,
+                PropType::Bool(false) => *out += r#"{"name":"bool","default":false}"#,
                 PropType::String(value) => {
-                    out += r#"{"name":"string","default":"#;
-                    append_json_string(&mut out, value);
-                    out += "}";
+                    *out += r#"{"name":"string","default":"#;
+                    append_json_string(out, value);
+                    *out += "}";
                 }
                 PropType::Int(value, min, max) => {
-                    out += r#"{"name":"integer","default":"#;
-                    out += &value.to_string();
-                    out += r#","min":"#;
-                    out += &min.to_string();
-                    out += r#","max":"#;
-                    out += &max.to_string();
-                    out += "}";
+                    *out += r#"{"name":"integer","default":"#;
+                    *out += &value.to_string();
+                    *out += r#","min":"#;
+                    *out += &min.to_string();
+                    *out += r#","max":"#;
+                    *out += &max.to_string();
+                    *out += "}";
                 }
                 PropType::Uint(value, min, max) => {
-                    out += r#"{"name":"integer","default":"#;
-                    out += &value.to_string();
-                    out += r#","min":"#;
-                    out += &min.to_string();
-                    out += r#","max":"#;
-                    out += &max.to_string();
-                    out += "}";
+                    *out += r#"{"name":"integer","default":"#;
+                    *out += &value.to_string();
+                    *out += r#","min":"#;
+                    *out += &min.to_string();
+                    *out += r#","max":"#;
+                    *out += &max.to_string();
+                    *out += "}";
                 }
-                PropType::Datetime => out += r#"{"name":"string","default":""}"#,
+                PropType::Datetime => *out += r#"{"name":"string","default":""}"#,
                 PropType::IntEnum(value, members) => {
-                    out += r#"{"name":"enum","default":"#;
-                    out += &value.to_string();
-                    out += r#","members":["#;
-                    for member in *members {
-                        append_json_string(&mut out, member);
-                        out += ",";
-                    }
-                    out.pop();
-                    out += "]}";
+                    *out += r#"{"name":"enum","default":"#;
+                    *out += &value.to_string();
+                    *out += r#","members":["#;
+                    append_comma_separated(members.iter().map(|x| *x), out, append_json_string);
+                    *out += "]}";
                 }
                 PropType::StrEnum(value, members) => {
-                    out += r#"{"name":"enum","default":"#;
-                    append_json_string(&mut out, members[*value].1);
-                    out += r#","members":["#;
-                    for member in *members {
-                        out += "[";
-                        append_json_string(&mut out, member.0);
-                        out += ",";
-                        append_json_string(&mut out, member.1);
-                        out += "],";
-                    }
-                    out.pop();
-                    out += "]}";
+                    *out += r#"{"name":"enum","default":"#;
+                    append_json_string(out, members[*value].1);
+                    *out += r#","members":["#;
+                    append_comma_separated(members.iter(), out, |out, member| {
+                        *out += "[";
+                        append_json_string(out, member.0);
+                        *out += ",";
+                        append_json_string(out, member.1);
+                        *out += "]";
+                    });
+                    *out += "]}";
                 }
             }
-            out += r#","label":"#;
-            append_json_string(&mut out, prop.label);
-            out += r#","desc":"#;
-            append_json_string(&mut out, prop.desc);
-            out += "},";
-        }
-
-        match out.pop() {
-            Some('{') => out += "{}",
-            Some(',') => out += "}",
-            _ => unreachable!(),
-        }
-        out += "}";
+            *out += r#","label":"#;
+            append_json_string(out, prop.label);
+            *out += r#","desc":"#;
+            append_json_string(out, prop.desc);
+            *out += "}";
+        });
+        out += r#"},"create_properties":["#;
+        append_comma_separated(CREATE_PROPERTIES.iter().map(|x| *x), &mut out, append_json_string);
+        out += "]}";
         out
     }
     /// iterate over the names of all saves avaiable
@@ -417,36 +408,49 @@ fn now() -> String {
 
 fn append_json_string(out: &mut String, text: &str) {
     *out += "\"";
-    for byte in text.bytes() {
-        match byte {
-            b'"' => *out += "\\\"",
-            b'\\' => *out += "\\\\",
-            7 => *out += "\\b",
-            12 => *out += "\\f",
-            b'\n' => *out += "\\n",
-            b'\r' => *out += "\\r",
-            b'\t' => *out += "\\t",
-            0..=31 | 128..=255 => {
-                *out += "\\x";
-                let upper = byte >> 4;
+    for char in text.chars() {
+        match char {
+            '"' => *out += r#"\""#,
+            '\\' => *out += r"\\",
+            '\x07' => *out += r"\b",
+            '\x0C' => *out += r"\f",
+            '\n' => *out += r"\n",
+            '\r' => *out += r"\r",
+            '\t' => *out += r"\t",
+            '\0'..='\x1F' | '\x7F' => {
+                *out += r"\x";
+                let upper = char as u8 >> 4;
                 if upper < 10 {
                     out.push((b'0' + upper) as char);
                 } else {
                     out.push((b'A' + upper - 10) as char);
                 }
-                let lower = byte & 0xF;
+                let lower = char as u8 & 0xF;
                 if lower < 10 {
                     out.push((b'0' + lower) as char);
                 } else {
                     out.push((b'A' + lower - 10) as char);
                 }
             }
-            _ => {
-                out.push(byte as char);
-            }
+            _ => out.push(char),
         }
     }
     *out += "\"";
+}
+
+fn append_comma_separated<T>(mut iter: impl Iterator<Item = T>, out: &mut String, mut callback: impl FnMut(&mut String, T)) {
+    let mut at_least_one_comma = false;
+    while let Some(next) = iter.next() {
+        let last_size = out.len();
+        callback(out, next);
+        if out.len() != last_size {
+            out.push(',');
+            at_least_one_comma = true;
+        }
+    }
+    if at_least_one_comma {
+        out.pop();
+    }
 }
 
 impl PropValue {

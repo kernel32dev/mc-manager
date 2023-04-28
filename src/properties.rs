@@ -1,4 +1,3 @@
-
 use serde::Deserialize;
 
 /// defines a property completely
@@ -34,9 +33,9 @@ pub enum PropType {
     /// special value, indicates the type is a string, and its default is the output from the now() function
     Datetime,
     /// numeric enum, first value is the default, the string in each item is the label, its index is the value
-    IntEnum(u64, &'static[&'static str]),
+    IntEnum(u64, &'static [&'static str]),
     /// string enum, first value is the index of the default pair, first string in each pair is the label, second string in each pair is the value
-    StrEnum(usize, &'static[(&'static str, &'static str)]),
+    StrEnum(usize, &'static [(&'static str, &'static str)]),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -45,6 +44,19 @@ pub enum PropAccess {
     Read,
     Write,
 }
+
+pub const CREATE_PROPERTIES: &[&'static str] = &[
+    "motd",
+    "level-seed",
+    "gamemode",
+    "difficulty",
+    "server-port",
+    "pvp",
+    "max-players",
+    "enable-command-block",
+    "online-mode",
+    "level-type",
+];
 
 // TODO: translate and simplify label and desc
 
