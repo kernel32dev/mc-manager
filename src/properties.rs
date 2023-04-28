@@ -33,6 +33,7 @@ pub enum PropType {
     /// special value, indicates the type is a string, and its default is the output from the now() function
     Datetime,
     /// numeric enum, first value is the default, the string in each item is the label, its index is the value
+    #[allow(dead_code)]
     IntEnum(u64, &'static [&'static str]),
     /// string enum, first value is the index of the default pair, first string in each pair is the label, second string in each pair is the value
     StrEnum(usize, &'static [(&'static str, &'static str)]),
@@ -55,6 +56,7 @@ pub const CREATE_PROPERTIES: &[&'static str] = &[
     "max-players",
     "enable-command-block",
     "online-mode",
+    "enforce-secure-profile",
     "level-type",
 ];
 
@@ -91,7 +93,7 @@ pub const PROPERTIES: &[PropDef] = &[
     },
     PropDef {
         access: PropAccess::Write,
-        ty: PropType::IntEnum(3, &["Pacífico", "Fácil", "Médio", "Difícil"]),
+        ty: PropType::StrEnum(1, &[("peaceful", "Pacífico"), ("easy", "Fácil"), ("medium", "Médio"), ("hard", "Difícil")]),
         name: "difficulty",
         label: "difficulty",
         desc: "Defines the difficulty (such as damage dealt by mobs and the way hunger and poison affects players) of the server. If a legacy difficulty number is specified, it is silently converted to a difficulty name. peaceful (0) easy (1) normal (2) hard (3)",
@@ -168,7 +170,7 @@ pub const PROPERTIES: &[PropDef] = &[
     },
     PropDef {
         access: PropAccess::Write,
-        ty: PropType::IntEnum(0, &["Modo Sobrevivência", "Modo Criativo", "Modo Aventura", "Modo Spectador"]),
+        ty: PropType::StrEnum(0, &[("survival", "Modo Sobrevivência"), ("creative", "Modo Criativo"), ("adventure", "Modo Aventura"), ("spectator", "Modo Spectador")]),
         name: "gamemode",
         label: "gamemode",
         desc: "Defines the mode of gameplay . If a legacy gamemode number is specified, it is silently converted to a gamemode name. survival (0) creative (1) adventure (2) spectator (3)",
