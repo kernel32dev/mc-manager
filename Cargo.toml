@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 chrono = "0.4.24"
 const-str = "0.5.4"
+lazy_static = "1.4.0"
 serde = { version = "1.0.160", features = ["derive", "serde_derive"] }
 static_dir = "0.2.0"
 tokio = { version = "1.27.0", features = ["macros", "rt-multi-thread", "signal"] }

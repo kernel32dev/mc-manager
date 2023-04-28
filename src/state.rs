@@ -1,5 +1,7 @@
 
 use crate::properties::*;
+use crate::instances::{query_instance, InstanceStatus};
+use crate::utils::{append_json_string, append_comma_separated};
 use std::collections::HashMap;
 use std::io::ErrorKind;
 use std::path::Path;
@@ -15,6 +17,9 @@ pub enum SaveError {
     AlreadyExists,
     VersionNotFound,
     PropertyNotFound,
+    IsOnline,
+    IsOffline,
+    IsLoading,
     IOError,
 }
 
@@ -68,14 +73,20 @@ pub mod save {
         std::fs::remove_dir_all(format!("saves/{name}"))?;
         Ok(())
     }
-    /// returns a valid json with all of the properties for a save, including its name
+    /// returns a valid json with all of the properties for a save, including its name, and its status
     pub fn load(name: &str) -> Result<String, SaveError> {
-        folder_exists(format!("saves/{name}"))?;
+        exists(name)?;
         let properties = read_properties(format!("saves/{name}/server.properties"))?;
         let mut out = String::with_capacity(4096);
         out += "{\"name\":\"";
         out += name;
-        out += "\"";
+        out += "\",\"status\":";
+        match query_instance(name)? {
+            InstanceStatus::Offline => out += "\"offline\"",
+            InstanceStatus::Loading => out += "\"loading\"",
+            InstanceStatus::Online => out += "\"online\"",
+            InstanceStatus::Shutdown => out += "\"shutdown\"",
+        }
         for prop in PROPERTIES.iter() {
             if prop.access == PropAccess::None {
                 continue;
@@ -104,9 +115,13 @@ pub mod save {
     }
     /// modifies one property of the save
     pub fn modify(name: &str, values: HashMap<String, PropValue>) -> Result<(), SaveError> {
-        folder_exists(format!("saves/{name}"))?;
+        exists(name)?;
         validate_properties(&values, PropAccess::Write)?;
-        write_properties(format!("saves/{name}/server.properties"), values)
+        if query_instance(name)? == InstanceStatus::Offline {
+            write_properties(format!("saves/{name}/server.properties"), values)
+        } else {
+            Err(SaveError::IsOnline)
+        }
     }
     /// update the access time of the world specified to now
     #[allow(dead_code)]
@@ -198,6 +213,30 @@ pub mod save {
         match std::fs::read_dir("saves") {
             Ok(paths) => Ok(SaveIter(Some(paths))),
             Err(_) => Err(SaveError::IOError),
+        }
+    }
+    /// returns an error if the save does not exist, may return IOError
+    pub fn exists(name: &str) -> Result<(), SaveError> {
+        match std::fs::metadata(format!("saves/{name}")) {
+            Ok(metadata) => {
+                if metadata.is_dir() {
+                    Ok(())
+                } else {
+                    Err(SaveError::NotFound)
+                }
+            }
+            Err(error) => {
+                const ERROR_FILE_NOT_FOUND: i32 = 2;
+                const ERROR_PATH_NOT_FOUND: i32 = 3;
+                if matches!(
+                    error.raw_os_error(),
+                    Some(ERROR_FILE_NOT_FOUND | ERROR_PATH_NOT_FOUND)
+                ) {
+                    Err(SaveError::NotFound)
+                } else {
+                    Err(SaveError::IOError)
+                }
+            }
         }
     }
 }
@@ -378,79 +417,8 @@ fn validate_properties(
     Ok(())
 }
 
-fn folder_exists(path: impl AsRef<Path>) -> Result<(), SaveError> {
-    match std::fs::metadata(path) {
-        Ok(metadata) => {
-            if metadata.is_dir() {
-                Ok(())
-            } else {
-                Err(SaveError::NotFound)
-            }
-        }
-        Err(error) => {
-            const ERROR_FILE_NOT_FOUND: i32 = 2;
-            const ERROR_PATH_NOT_FOUND: i32 = 3;
-            if matches!(
-                error.raw_os_error(),
-                Some(ERROR_FILE_NOT_FOUND | ERROR_PATH_NOT_FOUND)
-            ) {
-                Err(SaveError::NotFound)
-            } else {
-                Err(SaveError::IOError)
-            }
-        }
-    }
-}
-
 fn now() -> String {
     chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
-}
-
-fn append_json_string(out: &mut String, text: &str) {
-    *out += "\"";
-    for char in text.chars() {
-        match char {
-            '"' => *out += r#"\""#,
-            '\\' => *out += r"\\",
-            '\x07' => *out += r"\b",
-            '\x0C' => *out += r"\f",
-            '\n' => *out += r"\n",
-            '\r' => *out += r"\r",
-            '\t' => *out += r"\t",
-            '\0'..='\x1F' | '\x7F' => {
-                *out += r"\x";
-                let upper = char as u8 >> 4;
-                if upper < 10 {
-                    out.push((b'0' + upper) as char);
-                } else {
-                    out.push((b'A' + upper - 10) as char);
-                }
-                let lower = char as u8 & 0xF;
-                if lower < 10 {
-                    out.push((b'0' + lower) as char);
-                } else {
-                    out.push((b'A' + lower - 10) as char);
-                }
-            }
-            _ => out.push(char),
-        }
-    }
-    *out += "\"";
-}
-
-fn append_comma_separated<T>(mut iter: impl Iterator<Item = T>, out: &mut String, mut callback: impl FnMut(&mut String, T)) {
-    let mut at_least_one_comma = false;
-    while let Some(next) = iter.next() {
-        let last_size = out.len();
-        callback(out, next);
-        if out.len() != last_size {
-            out.push(',');
-            at_least_one_comma = true;
-        }
-    }
-    if at_least_one_comma {
-        out.pop();
-    }
 }
 
 impl PropValue {

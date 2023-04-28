@@ -1,9 +1,10 @@
 
 use std::collections::HashMap;
 
+use crate::instances::{instance_status_summary, start_instance, stop_instance};
 use crate::properties::PropValue;
 use crate::state::{save, SaveError};
-use crate::warp_utils::{catch, WarpResult};
+use crate::utils::{catch, WarpResult, json_response};
 use serde::Deserialize;
 use warp::Reply;
 use warp::reply::Response;
@@ -43,6 +44,28 @@ pub struct DeleteSave {
 impl DeleteSave {
     pub fn post(self) -> WarpResult<Response> {
         save::delete(&self.name).map(|_| warp::reply().into_response()).into()
+    }
+}
+
+#[derive(Deserialize)]
+pub struct StartSave {
+    name: String,
+}
+
+impl StartSave {
+    pub fn post(self) -> WarpResult<Response> {
+        start_instance(&self.name).map(|_| warp::reply().into_response()).into()
+    }
+}
+
+#[derive(Deserialize)]
+pub struct StopSave {
+    name: String,
+}
+
+impl StopSave {
+    pub fn post(self) -> WarpResult<Response> {
+        stop_instance(&self.name).map(|_| warp::reply().into_response()).into()
     }
 }
 
@@ -107,6 +130,10 @@ pub fn schema() -> WarpResult<Response> {
     WarpResult::Reply(json_response(save::schema()))
 }
 
+pub fn status() -> WarpResult<Response> {
+    WarpResult::Reply(json_response(instance_status_summary()))
+}
+
 fn is_safe(text: &str) -> bool {
     if text.is_empty() || !text.is_ascii() || text.ends_with('.') {
         return false;
@@ -131,12 +158,4 @@ fn is_safe(text: &str) -> bool {
         return false;
     }
     true
-}
-
-/// creates a json reponse from raw body with the appropiate content-type
-fn json_response(body: String) -> Response {
-    use warp::http::header::CONTENT_TYPE;
-    let (mut parts, body) = Response::new(body.into()).into_parts();
-    parts.headers.append(CONTENT_TYPE, "application/json".parse().unwrap());
-    Response::from_parts(parts, body)
 }
