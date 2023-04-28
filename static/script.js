@@ -135,8 +135,8 @@ function delete_save(name) {
 }
 
 function show_screen(screen) {
-    const SCREENS = ["saves-screen", "create-screen", "modify-screen"];
-    if (selected === null && screen === "modify-screen") {
+    const SCREENS = ["saves-screen", "create-screen", "modify-screen", "delete-screen"];
+    if (selected === null && (screen === "modify-screen" || screen === "delete-screen")) {
         return;
     }
     for (let i = 0; i < SCREENS.length; i++) {
@@ -153,6 +153,9 @@ function show_screen(screen) {
         foreach(document.getElementsByClassName("modify-param"), function(elem) {
             param_load(elem, save);
         });
+    } else if (screen === "delete-screen") {
+        let message = document.getElementById("delete-message-area");
+        message.innerText = "Você tem certeza que quer apagar o mundo \"" + selected + "\"";
     }
 }
 
@@ -172,12 +175,9 @@ function main() {
         if (ev.key === "Escape") unselect_save();
     });
     document.getElementById("saves-button-delete").addEventListener("click", function() {
-        if (selected === null) return;
-        alert("TODO: add confirm screen here");
-        let name = selected;
-        api_delete_save(name).then(function() {
-            delete_save(name);
-        }).catch(console.error);
+        if (selected !== null) {
+            show_screen("delete-screen");
+        }
     });
     document.getElementById("saves-button-edit").addEventListener("click", function() {
         show_screen("modify-screen");
@@ -256,6 +256,25 @@ function main() {
             enable("modify-button-confirm", "modify-button-cancel");
             console.error(response);
         });
+    });
+
+    // initialize delete-screen buttons
+
+    document.getElementById("delete-button-confirm").addEventListener("click", function() {
+        if (selected !== null) {
+            disable("delete-button-confirm", "delete-button-cancel");
+            let name = selected;
+            api_delete_save(name).then(function() {
+                enable("delete-button-confirm", "delete-button-cancel");
+                delete_save(name);
+                show_screen("saves-screen");
+            }).catch(function(response) {
+                enable("delete-button-confirm", "delete-button-cancel");
+                console.error(response);
+            });
+        } else {
+            show_screen("saves-screen");
+        }
     });
 }
 
