@@ -84,6 +84,16 @@ function api_delete_save(name) {
 
 // DOM FUNCTIONS //
 
+function create_saves(new_saves) {
+    let old_selected = selected;
+    unselect_save();
+    saves = {};
+    saves_elem = {};
+    clear_elem(document.getElementById("saves-container"));
+    foreach(new_saves, create_save);
+    if (old_selected !== null && saves[old_selected] !== undefined) select_save(old_selected);
+}
+
 function create_save(save) {
     let saves_container = document.getElementById("saves-container");
     let tr = document.createElement("tr");
@@ -105,6 +115,7 @@ function create_save(save) {
     img.setAttribute("src","/api/icons/" + save.name);
     save_div.dataset.name = save.name;
     save_div.classList.add("save");
+    tr.classList.toggle("hide", !search_matches(save.name))
     save_data.classList.add("save-data");
     save_line_1.classList.add("save-line", "save-line-1");
     save_line_2.classList.add("save-line", "save-line-2");
@@ -117,7 +128,6 @@ function create_save(save) {
     });
     saves[save.name] = save;
     saves_elem[save.name] = save_div;
-    return save_div;
 }
 
 function modify_save(name, values) {
@@ -159,6 +169,12 @@ function show_screen(screen) {
     }
 }
 
+function update_filter() {
+    foreach(document.getElementsByClassName("save"), function(elem) {
+        elem.parentElement.parentElement.classList.toggle("hide", !search_matches(elem.dataset.name));
+    });
+}
+
 function main() {
 
     // add sound to all buttons
@@ -175,6 +191,7 @@ function main() {
     document.body.addEventListener("keydown", function(ev) {
         if (ev.key === "Escape") unselect_save();
     });
+    document.getElementById("saves-search").addEventListener("input", update_filter);
     document.getElementById("saves-button-delete").addEventListener("click", function() {
         if (selected !== null) {
             show_screen("delete-screen");
@@ -185,21 +202,11 @@ function main() {
     });
     document.getElementById("saves-button-refresh").addEventListener("click", function() {
         api_fetch_saves().then(function(response) {
-            let old_selected = selected;
-            unselect_save();
-            saves = {};
-            saves_elem = {};
-            clear_elem(document.getElementById("saves-container"));
-            foreach(response.saves, create_save);
-            if (old_selected !== null && saves[old_selected] !== undefined) select_save(old_selected);
+            create_saves(response.saves);
         }).catch(console.error);
     });
     api_fetch_saves().then(function(response) {
-        let old_selected = selected;
-        unselect_save();
-        clear_elem(document.getElementById("saves-container"));
-        foreach(response.saves, create_save);
-        if (old_selected !== null) select_save(old_selected);
+        create_saves(response.saves);
     }).catch(console.error);
 
     // initialize create-screen and modify-screen input fields
@@ -294,6 +301,10 @@ function main() {
 
 function select_save(name) {
     if (selected === name) return;
+    if (!search_matches(name)) {
+        unselect_save();
+        return;
+    }
     if (selected === null) {
         enable("saves-button-play", "saves-button-edit", "saves-button-delete", "saves-button-restart");
     } else {
@@ -509,6 +520,14 @@ function create_p(text) {
         p.innerHTML = "&nbsp;";
     }
     return p;
+}
+
+// returns true if with the current search this item would be found
+function search_matches(item) {
+    let search = document.getElementById("saves-search").value.trim().toLocaleLowerCase();
+    let words = search.split(/ +/g);
+    item = item.toLocaleLowerCase();
+    return words.some(function(word) { return item.indexOf(word) !== -1; });
 }
 
 function validate_name(elem) {
