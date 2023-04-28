@@ -42,7 +42,6 @@ macro_rules! catch {
 
 pub(crate) use filters;
 pub(crate) use catch;
-use warp::Reply;
 use crate::state::SaveError;
 
 /// implements warp::Reply if T also implements warp::Reply
@@ -58,12 +57,6 @@ impl<T> WarpResult<T>
         WarpResult::Status(warp::http::StatusCode::BAD_REQUEST);
     pub const INTERNAL_SERVER_ERROR: Self =
         WarpResult::Status(warp::http::StatusCode::INTERNAL_SERVER_ERROR);
-}
-
-impl WarpResult<warp::reply::Response> {
-    pub fn reply() -> Self {
-        WarpResult::Reply(warp::reply().into_response())
-    }
 }
 
 impl<T> warp::Reply for WarpResult<T>

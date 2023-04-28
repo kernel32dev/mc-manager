@@ -1,7 +1,8 @@
 
 use std::collections::HashMap;
 
-use crate::state::{save, SaveError, PropValue};
+use crate::properties::PropValue;
+use crate::state::{save, SaveError};
 use crate::warp_utils::{catch, WarpResult};
 use serde::Deserialize;
 use warp::Reply;
@@ -100,6 +101,10 @@ pub fn icons(save: String) -> WarpResult<warp::reply::WithHeader<Vec<u8>>> {
         "Content-Type",
         "image/x-png",
     ))
+}
+
+pub fn schema() -> WarpResult<Response> {
+    WarpResult::Reply(json_response(save::schema()))
 }
 
 fn is_safe(text: &str) -> bool {

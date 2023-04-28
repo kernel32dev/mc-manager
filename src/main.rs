@@ -4,6 +4,7 @@ extern crate windows_service;
 mod api;
 mod server;
 mod state;
+mod properties;
 mod warp_utils;
 
 use std::thread::sleep;

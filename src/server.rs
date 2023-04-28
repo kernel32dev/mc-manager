@@ -10,6 +10,7 @@ pub fn serve(shutdown: Option<tokio::sync::oneshot::Receiver<()>>) {
         GET versions;
         GET saves;
         GET icons String;
+        GET schema;
         POST CreateSave;
         POST ModifySave;
         POST DeleteSave;
