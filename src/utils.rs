@@ -80,9 +80,9 @@ where
             err: "VersionNotFound",
             desc: "A versão não existe, ou não está instalada",
         };
-        const PROPERTYNOTFOUND: SaveErrorJson = SaveErrorJson {
-            err: "PropertyNotFound",
-            desc: "Essa propiedade não existe",
+        const INVALIDPROPERTY: SaveErrorJson = SaveErrorJson {
+            err: "InvalidProperty",
+            desc: "Essa propiedade não existe ou o valor usado não é válido",
         };
         const ISONLINE: SaveErrorJson = SaveErrorJson {
             err: "IsOnline",
@@ -123,8 +123,8 @@ where
                     warp::http::StatusCode::BAD_REQUEST,
                 )
                 .into_response(),
-                SaveError::PropertyNotFound => warp::reply::with_status(
-                    warp::reply::json(&PROPERTYNOTFOUND),
+                SaveError::InvalidProperty => warp::reply::with_status(
+                    warp::reply::json(&INVALIDPROPERTY),
                     warp::http::StatusCode::BAD_REQUEST,
                 )
                 .into_response(),

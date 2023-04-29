@@ -16,7 +16,7 @@ pub enum SaveError {
     NotFound,
     AlreadyExists,
     VersionNotFound,
-    PropertyNotFound,
+    InvalidProperty,
     IsOnline,
     IsOffline,
     IsLoading,
@@ -125,7 +125,6 @@ pub mod save {
         }
     }
     /// update the access time of the world specified to now
-    #[allow(dead_code)]
     pub fn access(name: &str) -> Result<(), SaveError> {
         let mut values = HashMap::new();
         values.insert(
@@ -424,7 +423,7 @@ fn validate_properties(
                     }
                     PropType::StrEnum(_, values) => {
                         if let PropValue::String(value) = value {
-                            if values.iter().any(|(_, valid)| *valid == value) {
+                            if values.iter().any(|(valid, _)| *valid == value) {
                                 continue;
                             }
                         }
@@ -433,8 +432,8 @@ fn validate_properties(
                 _ => {}
             }
         }
-        println!("Warning invalid property: {}", key);
-        return Err(SaveError::PropertyNotFound);
+        println!("[!] Warning invalid property: {}", key);
+        return Err(SaveError::InvalidProperty);
     }
     Ok(())
 }
@@ -465,7 +464,7 @@ fn generate_properties(version: &str, values: &HashMap<String, PropValue>) -> St
                 PropType::Uint(value, _, _) => out += &value.to_string(),
                 PropType::Datetime => out += &now,
                 PropType::IntEnum(value, _) => out += &value.to_string(),
-                PropType::StrEnum(value, members) => append_prop_escaped(&mut out, (*members)[*value].1),
+                PropType::StrEnum(value, members) => append_prop_escaped(&mut out, (*members)[*value].0),
             }
         }
         out += "\r\n";

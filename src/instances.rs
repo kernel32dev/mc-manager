@@ -1,4 +1,4 @@
-use crate::state::read_property;
+use crate::state::{read_property, save};
 use crate::state::{save::exists, SaveError};
 use crate::utils::{append_comma_separated, append_json_string};
 use lazy_static::lazy_static;
@@ -29,13 +29,14 @@ struct Instance {
 }
 
 impl Instance {
-    fn stop(&self) -> Result<(), SaveError> {
+    fn stop(&mut self) -> Result<(), SaveError> {
         match self.status {
             InstanceStatus::Offline => unreachable!(),
             InstanceStatus::Loading => Err(SaveError::IsLoading),
             InstanceStatus::Online => {
                 let mut stdin = self.stdin.lock().unwrap();
                 if stdin.write(b"stop\r\n").is_ok() {
+                    self.status = InstanceStatus::Shutdown;
                     Ok(())
                 } else {
                     Err(SaveError::IOError)
@@ -70,6 +71,7 @@ pub fn start_instance(name: &str) -> Result<(), SaveError> {
     if directory.starts_with(r"\\?\") {
         directory = &directory[4..];
     }
+    save::access(name)?;
     let mut child = std::process::Command::new("java.exe")
         .args(["-jar", "server.jar", "nogui"])
         .current_dir(directory)
@@ -103,6 +105,9 @@ pub fn start_instance(name: &str) -> Result<(), SaveError> {
                 );
             }
         }
+        if save::access(name.as_str()).is_err() {
+            println!("[!] An error occoured when attempting to set the access time of save \"{name}\"")
+        }
         let mut instances = INSTANCES.write().unwrap();
         instances
             .remove(&*name)
@@ -130,17 +135,6 @@ pub fn start_instance(name: &str) -> Result<(), SaveError> {
                         } else {
                             break;
                         }
-                    } else if line.contains(" Stopping ") {
-                        let mut instances = INSTANCES.write().unwrap();
-                        if let Some(instance) = instances.get_mut(name.as_str()) {
-                            if instance.status == InstanceStatus::Loading
-                                || instance.status == InstanceStatus::Online
-                            {
-                                instance.status = InstanceStatus::Shutdown;
-                            }
-                        } else {
-                            break;
-                        }
                     }
                     println!("[{name}] {}", line);
                 }
@@ -159,8 +153,8 @@ pub fn start_instance(name: &str) -> Result<(), SaveError> {
 /// stops the instance, returns immedialty, will return an error if it is not online
 pub fn stop_instance(name: &str) -> Result<(), SaveError> {
     exists(name)?;
-    let instances = INSTANCES.read().unwrap();
-    if let Some(instance) = instances.get(name) {
+    let mut instances = INSTANCES.write().unwrap();
+    if let Some(instance) = instances.get_mut(name) {
         instance.stop()
     } else {
         Err(SaveError::IsOffline)
@@ -201,7 +195,7 @@ pub fn instance_status_summary() -> String {
 /// returns immediatly, signals to all instances that they must stop as soon as possible
 pub fn stop_all_instances() {
     println!("[*] Shutting down all instances");
-    for (_, instance) in INSTANCES.read().unwrap().iter() {
+    for (_, instance) in INSTANCES.write().unwrap().iter_mut() {
         if instance.status == InstanceStatus::Online {
             if instance.stop().is_err() {
                 panic!("could not send stop command through stdin");

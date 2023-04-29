@@ -6,6 +6,7 @@ document.addEventListener("DOMContentLoaded", main);
 let click_sound = null;
 
 let schema = null;
+let gamemode_dict = null;
 let create_properties = null;
 
 let saves = {};
@@ -134,8 +135,8 @@ function create_save(save) {
     save_line_2.classList.add("save-line", "save-line-2");
     save_line_3.classList.add("save-line", "save-line-3");
     save_line_1.innerText = name;
-    save_line_2.innerText = "(" + save["mc-manager-create-time"].substr(0, 16) + ")";
-    save_line_3.innerText = save["mc-manager-server-version"] + " - " + ["Modo Sobrevivência", "Modo Criativo", "Modo Aventura", "Modo Spectador"][save["gamemode"]];
+    save_line_2.innerText = "(" + save["mc-manager-create-time"].substr(0, 16) + ") :" + save["server-port"];
+    save_line_3.innerText = save["mc-manager-server-version"] + " - " + gamemode_dict[save["gamemode"]];
     save_div.addEventListener('click', function() {
         select_save(name);
     });
@@ -200,21 +201,25 @@ function show_screen(screen) {
 
 function update_filter() {
     foreach(document.getElementsByClassName("save"), function(elem) {
-        elem.parentElement.parentElement.classList.toggle("hide", !search_matches(elem.dataset.name));
+        let visible = search_matches(elem.dataset.name);
+        if (!visible && elem.dataset.name === selected) {
+            unselect_save();
+        }
+        elem.parentElement.parentElement.classList.toggle("hide", !visible);
     });
 }
 
 function update_status(status) {
     foreach(Object.values(saves), function(save) {
-        if (save.status !== status[save.name]) {
+        let new_status = status[save.name];
+        if (new_status === undefined) {
+            new_status = "offline";
+        }
+        if (save.status !== new_status) {
             let elem = saves_elem[save.name];
-            let new_status = status[save.name];
-            if (new_status === undefined) {
-                new_status = "offline";
-            }
-            save.status = new_status;
-            elem.classList.remove("online", "offline", "loading", "shutdown");
+            elem.classList.remove(save.status);
             elem.classList.add(new_status);
+            save.status = new_status;
             if (save.name === selected) {
                 select_save(selected);
             }
@@ -222,7 +227,7 @@ function update_status(status) {
     });
 }
 
-function main() {
+async function main() {
 
     // add sound to all buttons
 
@@ -242,18 +247,19 @@ function main() {
     document.getElementById("saves-search").addEventListener("input", update_filter);
     document.getElementById("saves-button-play").addEventListener("click", function() {
         if (selected !== null) {
+            let name = selected;
             let save_div = saves_elem[selected];
             if (save_div.classList.contains("offline")) {
-                api_start_save(selected).then(function(response) {
+                api_start_save(name).then(function(response) {
                     save_div.classList.remove("offline");
                     save_div.classList.add("loading");
-                    select_save(selected);
+                    if (name === selected) select_save(selected);
                 }).catch(console.error);
-            } else {
-                api_stop_save(selected).then(function(response) {
-                    save_div.classList.remove("loading", "online");
+            } else if (save_div.classList.contains("online")) {
+                api_stop_save(name).then(function(response) {
+                    save_div.classList.remove("online");
                     save_div.classList.add("shutdown");
-                    select_save(selected);
+                    if (name === selected) select_save(selected);
                 }).catch(console.error);
             }
         }
@@ -262,12 +268,12 @@ function main() {
         show_screen("create-screen");
     });
     document.getElementById("saves-button-modify").addEventListener("click", function() {
-        alert("TODO: ensure selected is offline");
-        show_screen("modify-screen");
+        if (selected !== null && saves[selected].status === "offline") {
+            show_screen("modify-screen");
+        }
     });
     document.getElementById("saves-button-delete").addEventListener("click", function() {
-        alert("TODO: ensure selected is offline");
-        if (selected !== null) {
+        if (selected !== null && saves[selected].status === "offline") {
             show_screen("delete-screen");
         }
     });
@@ -276,42 +282,14 @@ function main() {
             create_saves(response.saves);
         }).catch(console.error);
     });
-    document.getElementById("saves-button-log").addEventListener("click", function() {
-        alert("TODO: create log")
+    document.getElementById("saves-button-console").addEventListener("click", function() {
+        alert("TODO: create console-screen")
     });
-    api_fetch_saves().then(function(response) {
-        create_saves(response.saves);
-    }).catch(console.error);
-
-    // initialize create-screen and modify-screen input fields
-
-    api_fetch_schema().then(function(response) {
-        schema = response.schema;
-        create_properties = response.create_properties;
-        let create_area = document.getElementById("create-input-area");
-        foreach(create_properties, function(create_property) {
-            let elem = param_setup(create_property);
-            elem.classList.add("create-param", "wide");
-            create_area.append(create_p(schema[create_property].label));
-            create_area.append(elem);
-        });
-        create_area.append(create_p());
-        let modify_area = document.getElementById("modify-input-area");
-        let modify_properties = Object.keys(schema);
-        modify_properties.sort();
-        foreach(modify_properties, function(modify_property) {
-            let elem = param_setup(modify_property);
-            elem.classList.add("modify-param", "wide");
-            modify_area.append(create_p(schema[modify_property].label));
-            modify_area.append(elem);
-        });
-        modify_area.append(create_p());
-    }).catch(console.error);
 
     // initialize create-screen buttons
 
     document.getElementById("create-input-search-version").addEventListener("click", function() {
-        alert("TODO: add a version list");
+        alert("TODO: create version-screen");
     });
     document.getElementById("create-button-confirm").addEventListener("click", function() {
         let name_elem = document.getElementById("create-param-name");
@@ -370,6 +348,51 @@ function main() {
         }
     });
 
+    // initialize create-screen and modify-screen input fields
+
+    let future_saves = api_fetch_saves();
+    let future_versions = api_fetch_versions();
+    let future_schema = api_fetch_schema();
+
+    future_schema.then(function(response) {
+        schema = response.schema;
+        create_properties = response.create_properties;
+        gamemode_dict = {};
+        foreach(schema["gamemode"].type.members, function(pair) {
+            gamemode_dict[pair[0]] = pair[1];
+        });
+        let create_area = document.getElementById("create-input-area");
+        foreach(create_properties, function(create_property) {
+            let elem = param_setup(create_property);
+            elem.classList.add("create-param", "wide");
+            create_area.append(create_p(schema[create_property].label));
+            create_area.append(elem);
+        });
+        create_area.append(create_p());
+        let modify_area = document.getElementById("modify-input-area");
+        let modify_properties = Object.keys(schema);
+        modify_properties.sort();
+        foreach(modify_properties, function(modify_property) {
+            let elem = param_setup(modify_property);
+            elem.classList.add("modify-param", "wide");
+            modify_area.append(create_p(schema[modify_property].label));
+            modify_area.append(elem);
+        });
+        modify_area.append(create_p());
+
+        // schema was loaded, load in the saves
+
+        future_saves.then(function(response) {
+            create_saves(response.saves);
+        }).catch(console.error);
+
+        // versions were loaded, create versions-screen
+        future_versions.then(function(response) {
+            console.log(response);
+            alert("TODO: create version-screen");
+        }).catch(console.error);
+    }).catch(console.error);
+
     // setup status update
 
     setInterval(function() {
@@ -379,34 +402,36 @@ function main() {
 
 // HELPER FUNCTIONS //
 
+// this function is responsible for updating the buttons when a save is selected
+// if the selected buttons changes status select_save(selected) should be called to update the buttons
 function select_save(name) {
-    if (selected === name) {
-        if (selected !== null) {
-            document.getElementById("saves-button-play").firstElementChild.innerText = saves_elem[selected].classList.contains("offline") ? "Iniciar mundo" : "Parar mundo";
-        }
-        return;
-    }
+    let play_button_caption = document.getElementById("saves-button-play").firstElementChild;
+    unselect_save();
     if (!search_matches(name)) {
-        unselect_save();
         return;
-    }
-    if (selected === null) {
-        enable("saves-button-play", "saves-button-modify", "saves-button-delete", "saves-button-log");
-    } else {
-        saves_elem[selected].classList.remove("selected");
     }
     let elem = saves_elem[name];
     elem.classList.add("selected");
-    document.getElementById("saves-button-play").firstElementChild.innerText = elem.classList.contains("offline") ? "Iniciar mundo" : "Parar mundo";
+    if (elem.classList.contains("offline")) {
+        enable("saves-button-play", "saves-button-modify", "saves-button-delete");
+        play_button_caption.innerText = "Iniciar mundo";
+    } else if (elem.classList.contains("online")) {
+        enable("saves-button-play", "saves-button-console");
+        play_button_caption.innerText = "Parar mundo";
+    } else if (elem.classList.contains("loading")) {
+        play_button_caption.innerText = "Iniciar mundo";
+    } else if (elem.classList.contains("shutdown")) {
+        play_button_caption.innerText = "Parar mundo";
+    }
     selected = name;
 }
 
 function unselect_save() {
+    disable("saves-button-play", "saves-button-modify", "saves-button-delete", "saves-button-console");
+    document.getElementById("saves-button-play").firstElementChild.innerText = "Iniciar mundo";
     if (selected === null) return;
     saves_elem[selected].classList.remove("selected");
     selected = null;
-    document.getElementById("saves-button-play").firstElementChild.innerText = "Iniciar mundo";
-    disable("saves-button-play", "saves-button-modify", "saves-button-delete", "saves-button-log");
 }
 
 // creates an element that accepts typed input from the user
@@ -446,12 +471,12 @@ function param_setup(prop_name) {
         elem = document.createElement("button");
         let span = document.createElement("span");
         elem.dataset.value = prop.type["default"];
-        span.innerText = prop.type.members[prop.type["default"]];
+        span.innerText = prop.type.members[prop.type["default"]][1];
         elem.addEventListener("click", function() {
             play_click_sound();
             let value = Number(elem.dataset.value) + 1;
             if (value >= prop.type.members.length) value = 0;
-            elem.firstElementChild.innerText = prop.type.members[value][0];
+            elem.firstElementChild.innerText = prop.type.members[value][1];
             elem.dataset.value = value;
         });
         elem.append(span);
@@ -493,7 +518,7 @@ function param_value(elem, values) {
         } else if (prop.type.name === "integer-enum") {
             value = Number(elem.dataset.value);
         } else if (prop.type.name === "string-enum") {
-            value = prop.type.members[Number(elem.dataset.value)][1];
+            value = prop.type.members[Number(elem.dataset.value)][0];
         } else {
             throw new Error("unknown property type for button " + prop.type.name);
         }
@@ -531,16 +556,16 @@ function param_load(elem, save) {
         } else if (prop.type.name === "string-enum") {
             let index = 0;
             for (; index < prop.type.members.length; index++) {
-                if (prop.type.members[index][1] === value) {
+                if (prop.type.members[index][0] === value) {
                     break;
                 }
             }
             if (index >= prop.type.members.length) {
-                console.warn(`member ${value} of enum for ${elem.dataset.prop} not found, using default (${prop.type.members[prop.type["default"]][1]}) instead`);
+                console.warn(`member ${value} of enum for ${elem.dataset.prop} not found, using default (${prop.type.members[prop.type["default"]][0]}) instead`);
                 index = prop.type["default"];
             }
             elem.dataset.value = index;
-            elem.firstElementChild.innerText = prop.type.members[index][0];
+            elem.firstElementChild.innerText = prop.type.members[index][1];
         } else {
             throw new Error("unknown property type for button " + prop.type.name);
         }

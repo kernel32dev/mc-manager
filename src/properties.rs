@@ -34,10 +34,10 @@ pub enum PropType {
     Uint(u64, u64, u64),
     /// special value, indicates the type is a string, and its default is the output from the now() function
     Datetime,
-    /// numeric enum, first value is the default, the string in each item is the label, its index is the value
+    /// numeric enum, first value is the default, the string in each item of the array is the label, its index is the value
     #[allow(dead_code)]
     IntEnum(u64, &'static [&'static str]),
-    /// string enum, first value is the index of the default pair, first string in each pair is the label, second string in each pair is the value
+    /// string enum, first value is the index of the default pair, the second is an array of pairs, first string in each pair is the value, second string in each pair is the label
     StrEnum(usize, &'static [(&'static str, &'static str)]),
 }
 
@@ -247,7 +247,7 @@ pub const PROPERTIES: &[PropDef] = &[
     },
     PropDef {
         access: PropAccess::Write,
-        ty: PropType::StrEnum(0, &[("Normal","normal"), ("Plano","flat"), ("Grandes Biomas","large_biomes"), ("Aplificado","amplified")]),
+        ty: PropType::StrEnum(0, &[("normal","Normal"), ("flat","Plano"), ("large_biomes","Grandes Biomas"), ("amplified","Aplificado")]),
         name: "level-type",
         label: "level-type",
         desc: "Determines the world preset that is generated. Escaping \":\" is required when using a world preset ID, and the vanilla world preset ID's namespace ( minecraft: ) can be omitted. minecraft:normal - Standard world with hills, valleys, water, etc. minecraft: flat - A flat world with no features, can be modified with generator-settings . minecraft: large_biomes - Same as default but all biomes are larger. minecraft: amplified - Same as default but world-generation height limit is increased. minecraft: single_biome_surface - A buffet world which the entire overworld consists of one biome, can be modified with generator-settings . buffet - Only for 1.15 or before. Same as default unless generator-settings is set. default_1_1 - Only for 1.15 or before. Same as default, but counted as a different world type. customized - Only for 1.15 or before. After 1.13, this value is no different than default, but in 1.12 and before, it could be used to create a completely custom world.",
