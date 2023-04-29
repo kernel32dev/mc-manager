@@ -1,7 +1,7 @@
 
 use crate::properties::*;
 use crate::instances::{query_instance, InstanceStatus};
-use crate::utils::{append_json_string, append_comma_separated};
+use crate::utils::{append_json_string, append_comma_separated, append_prop_escaped, parse_prop_unescaped};
 use std::collections::HashMap;
 use std::io::ErrorKind;
 use std::path::Path;
@@ -269,7 +269,7 @@ impl Iterator for SaveIter {
     }
 }
 
-/// reads the only the ones especified properties, if not found returns None
+/// reads all the properties
 fn read_properties(path: impl AsRef<Path>) -> Result<HashMap<String, String>, SaveError> {
     use std::fs::File;
     use std::io::{BufRead, BufReader};
@@ -281,7 +281,7 @@ fn read_properties(path: impl AsRef<Path>) -> Result<HashMap<String, String>, Sa
         let line = line?;
         if !line.starts_with('#') {
             if let Some((key, value)) = line.split_once('=') {
-                out.insert(key.trim().to_owned(), value.to_owned());
+                out.insert(key.trim().to_owned(), parse_prop_unescaped(value));
             }
         }
     }
@@ -421,18 +421,6 @@ fn now() -> String {
     chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
 }
 
-impl PropValue {
-    fn to_prop_value(&self, out: &mut String) {
-        match self {
-            PropValue::Boolean(true) => *out += "true",
-            PropValue::Boolean(false) => *out += "false",
-            PropValue::String(value) => *out += value,
-            PropValue::Int(value) => *out += &value.to_string(),
-            PropValue::Uint(value) => *out += &value.to_string(),
-        }
-    }
-}
-
 fn generate_properties(version: &str, values: &HashMap<String, PropValue>) -> String {
     let mut out = String::new();
     let now = now();
@@ -450,12 +438,12 @@ fn generate_properties(version: &str, values: &HashMap<String, PropValue>) -> St
             match &prop.ty {
                 PropType::Bool(true) => out += "true",
                 PropType::Bool(false) => out += "false",
-                PropType::String(value) => out += value,
+                PropType::String(value) => append_prop_escaped(&mut out, *value),
                 PropType::Int(value, _, _) => out += &value.to_string(),
                 PropType::Uint(value, _, _) => out += &value.to_string(),
                 PropType::Datetime => out += &now,
                 PropType::IntEnum(value, _) => out += &value.to_string(),
-                PropType::StrEnum(value, members) => out += (*members)[*value].1,
+                PropType::StrEnum(value, members) => append_prop_escaped(&mut out, (*members)[*value].1),
             }
         }
         out += "\r\n";

@@ -1,4 +1,3 @@
-
 macro_rules! filters {
     (GET $func_name:ident $($ty:ty)*;) => {{
         use warp::Filter;
@@ -40,8 +39,8 @@ macro_rules! catch {
     };
 }
 
-pub(crate) use filters;
 pub(crate) use catch;
+pub(crate) use filters;
 
 use crate::state::SaveError;
 use warp::reply::Response;
@@ -53,10 +52,8 @@ pub enum WarpResult<T> {
     SaveError(SaveError),
 }
 
-impl<T> WarpResult<T>
-{
-    pub const BAD_REQUEST: Self =
-        WarpResult::Status(warp::http::StatusCode::BAD_REQUEST);
+impl<T> WarpResult<T> {
+    pub const BAD_REQUEST: Self = WarpResult::Status(warp::http::StatusCode::BAD_REQUEST);
     pub const INTERNAL_SERVER_ERROR: Self =
         WarpResult::Status(warp::http::StatusCode::INTERNAL_SERVER_ERROR);
 }
@@ -71,26 +68,82 @@ where
             err: &'static str,
             desc: &'static str,
         }
-        const NOTFOUND: SaveErrorJson = SaveErrorJson { err: "NotFound", desc: "O save não foi encontrado" };
-        const ALREADYEXISTS: SaveErrorJson = SaveErrorJson { err: "AlreadyExists", desc: "O nome já é usado por um save" };
-        const VERSIONNOTFOUND: SaveErrorJson = SaveErrorJson { err: "VersionNotFound", desc: "A versão não existe, ou não está instalada" };
-        const PROPERTYNOTFOUND: SaveErrorJson = SaveErrorJson { err: "PropertyNotFound", desc: "Essa propiedade não existe" };
-        const IOERROR: SaveErrorJson = SaveErrorJson { err: "IOError", desc: "Ocorreu um erro ao operar os arquivos" };
-        const ISONLINE: SaveErrorJson = SaveErrorJson { err: "IsOnline", desc: "O save esta ligado" };
-        const ISOFFLINE: SaveErrorJson = SaveErrorJson { err: "IsOffline", desc: "O save esta desligado" };
-        const ISLOADING: SaveErrorJson = SaveErrorJson { err: "IsLoading", desc: "O save esta ligando" };
+        const NOTFOUND: SaveErrorJson = SaveErrorJson {
+            err: "NotFound",
+            desc: "O save não foi encontrado",
+        };
+        const ALREADYEXISTS: SaveErrorJson = SaveErrorJson {
+            err: "AlreadyExists",
+            desc: "O nome já é usado por um save",
+        };
+        const VERSIONNOTFOUND: SaveErrorJson = SaveErrorJson {
+            err: "VersionNotFound",
+            desc: "A versão não existe, ou não está instalada",
+        };
+        const PROPERTYNOTFOUND: SaveErrorJson = SaveErrorJson {
+            err: "PropertyNotFound",
+            desc: "Essa propiedade não existe",
+        };
+        const IOERROR: SaveErrorJson = SaveErrorJson {
+            err: "IOError",
+            desc: "Ocorreu um erro ao operar os arquivos",
+        };
+        const ISONLINE: SaveErrorJson = SaveErrorJson {
+            err: "IsOnline",
+            desc: "O save esta ligado",
+        };
+        const ISOFFLINE: SaveErrorJson = SaveErrorJson {
+            err: "IsOffline",
+            desc: "O save esta desligado",
+        };
+        const ISLOADING: SaveErrorJson = SaveErrorJson {
+            err: "IsLoading",
+            desc: "O save esta ligando",
+        };
         match self {
             WarpResult::Reply(reply) => reply.into_response(),
             WarpResult::Status(status) => status.into_response(),
             WarpResult::SaveError(error) => match error {
-                SaveError::NotFound => warp::reply::with_status(warp::reply::json(&NOTFOUND), warp::http::StatusCode::BAD_REQUEST).into_response(),
-                SaveError::AlreadyExists => warp::reply::with_status(warp::reply::json(&ALREADYEXISTS), warp::http::StatusCode::BAD_REQUEST).into_response(),
-                SaveError::VersionNotFound => warp::reply::with_status(warp::reply::json(&VERSIONNOTFOUND), warp::http::StatusCode::BAD_REQUEST).into_response(),
-                SaveError::PropertyNotFound => warp::reply::with_status(warp::reply::json(&PROPERTYNOTFOUND), warp::http::StatusCode::BAD_REQUEST).into_response(),
-                SaveError::IOError => warp::reply::with_status(warp::reply::json(&IOERROR), warp::http::StatusCode::INTERNAL_SERVER_ERROR).into_response(),
-                SaveError::IsOnline => warp::reply::with_status(warp::reply::json(&ISONLINE), warp::http::StatusCode::BAD_REQUEST).into_response(),
-                SaveError::IsOffline => warp::reply::with_status(warp::reply::json(&ISOFFLINE), warp::http::StatusCode::BAD_REQUEST).into_response(),
-                SaveError::IsLoading => warp::reply::with_status(warp::reply::json(&ISLOADING), warp::http::StatusCode::BAD_REQUEST).into_response(),
+                SaveError::NotFound => warp::reply::with_status(
+                    warp::reply::json(&NOTFOUND),
+                    warp::http::StatusCode::BAD_REQUEST,
+                )
+                .into_response(),
+                SaveError::AlreadyExists => warp::reply::with_status(
+                    warp::reply::json(&ALREADYEXISTS),
+                    warp::http::StatusCode::BAD_REQUEST,
+                )
+                .into_response(),
+                SaveError::VersionNotFound => warp::reply::with_status(
+                    warp::reply::json(&VERSIONNOTFOUND),
+                    warp::http::StatusCode::BAD_REQUEST,
+                )
+                .into_response(),
+                SaveError::PropertyNotFound => warp::reply::with_status(
+                    warp::reply::json(&PROPERTYNOTFOUND),
+                    warp::http::StatusCode::BAD_REQUEST,
+                )
+                .into_response(),
+                SaveError::IOError => warp::reply::with_status(
+                    warp::reply::json(&IOERROR),
+                    warp::http::StatusCode::INTERNAL_SERVER_ERROR,
+                )
+                .into_response(),
+                SaveError::IsOnline => warp::reply::with_status(
+                    warp::reply::json(&ISONLINE),
+                    warp::http::StatusCode::BAD_REQUEST,
+                )
+                .into_response(),
+                SaveError::IsOffline => warp::reply::with_status(
+                    warp::reply::json(&ISOFFLINE),
+                    warp::http::StatusCode::BAD_REQUEST,
+                )
+                .into_response(),
+                SaveError::IsLoading => warp::reply::with_status(
+                    warp::reply::json(&ISLOADING),
+                    warp::http::StatusCode::BAD_REQUEST,
+                )
+                .into_response(),
             },
         }
     }
@@ -118,7 +171,9 @@ impl<T> From<Result<T, SaveError>> for WarpResult<T> {
 pub fn json_response(body: String) -> Response {
     use warp::http::header::CONTENT_TYPE;
     let (mut parts, body) = Response::new(body.into()).into_parts();
-    parts.headers.append(CONTENT_TYPE, "application/json".parse().unwrap());
+    parts
+        .headers
+        .append(CONTENT_TYPE, "application/json".parse().unwrap());
     Response::from_parts(parts, body)
 }
 
@@ -154,7 +209,11 @@ pub fn append_json_string(out: &mut String, text: &str) {
     *out += "\"";
 }
 
-pub fn append_comma_separated<T>(mut iter: impl Iterator<Item = T>, out: &mut String, mut callback: impl FnMut(&mut String, T)) {
+pub fn append_comma_separated<T>(
+    mut iter: impl Iterator<Item = T>,
+    out: &mut String,
+    mut callback: impl FnMut(&mut String, T),
+) {
     let mut at_least_one_comma = false;
     while let Some(next) = iter.next() {
         let last_size = out.len();
@@ -166,5 +225,88 @@ pub fn append_comma_separated<T>(mut iter: impl Iterator<Item = T>, out: &mut St
     }
     if at_least_one_comma {
         out.pop();
+    }
+}
+
+pub fn append_prop_escaped(out: &mut String, value: &str) {
+    if !value.contains(|x| matches!(x, '=' | ':' | '\0'..='\x1F')) {
+        out.push_str(value);
+    } else {
+        for char in value.chars() {
+            match char {
+                '=' => out.push_str(r"\="),
+                ':' => out.push_str(r"\:"),
+                '\n' => out.push_str(r"\n"),
+                '\r' => out.push_str(r"\r"),
+                '\t' => out.push_str(r"\t"),
+                '\0'..='\x1F' | '\x7F' => {
+                    *out += r"\u00";
+                    let upper = char as u8 >> 4;
+                    if upper < 10 {
+                        out.push((b'0' + upper) as char);
+                    } else {
+                        out.push((b'A' + upper - 10) as char);
+                    }
+                    let lower = char as u8 & 0xF;
+                    if lower < 10 {
+                        out.push((b'0' + lower) as char);
+                    } else {
+                        out.push((b'A' + lower - 10) as char);
+                    }
+                }
+                _ => out.push(char),
+            }
+        }
+    }
+}
+
+pub fn parse_prop_unescaped(value: &str) -> String {
+    if !value.contains('\\') {
+        value.to_owned()
+    } else {
+        let mut out = String::new();
+        let mut chars = value.chars().peekable();
+        while let Some(char) = chars.next() {
+            if char == '\\' {
+                if let Some(next) = chars.next() {
+                    match next {
+                        'n' => out.push('\n'),
+                        'r' => out.push('\r'),
+                        't' => out.push('\t'),
+                        'u' => {
+                            let mut code = 0;
+                            for _ in 0..4 {
+                                if let Some(next) = chars.peek() {
+                                    match *next {
+                                        '0'..='9' => {
+                                            code = (code << 4) | (*next as u8 - b'0') as u32
+                                        }
+                                        'A'..='F' => {
+                                            code = (code << 4) | (*next as u8 - b'A' + 10) as u32
+                                        }
+                                        'a'..='f' => {
+                                            code = (code << 4) | (*next as u8 - b'a' + 10) as u32
+                                        }
+                                        _ => break,
+                                    }
+                                    chars.next();
+                                } else {
+                                    break;
+                                }
+                            }
+                            if let Some(char) = char::from_u32(code) {
+                                out.push(char);
+                            }
+                        }
+                        _ => out.push(next),
+                    }
+                } else {
+                    out.push(char);
+                }
+            } else {
+                out.push(char);
+            }
+        }
+        out
     }
 }

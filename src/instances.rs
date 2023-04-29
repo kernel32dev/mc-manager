@@ -75,7 +75,6 @@ pub fn start_instance(name: &str) -> Result<(), SaveError> {
     let name_arc = Arc::new(name.to_owned());
     let name = name_arc.clone();
     // waits for child to complete
-
     tokio::spawn(async move {
         println!("[{name}] Waiter thread spawned");
         match child.wait() {

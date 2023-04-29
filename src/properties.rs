@@ -1,5 +1,7 @@
 use serde::Deserialize;
 
+use crate::utils::append_prop_escaped;
+
 /// defines a property completely
 pub struct PropDef {
     pub access: PropAccess,
@@ -44,6 +46,18 @@ pub enum PropAccess {
     None,
     Read,
     Write,
+}
+
+impl PropValue {
+    pub fn to_prop_value(&self, out: &mut String) {
+        match self {
+            PropValue::Boolean(true) => *out += "true",
+            PropValue::Boolean(false) => *out += "false",
+            PropValue::String(value) => append_prop_escaped(out, value),
+            PropValue::Int(value) => *out += &value.to_string(),
+            PropValue::Uint(value) => *out += &value.to_string(),
+        }
+    }
 }
 
 pub const CREATE_PROPERTIES: &[&'static str] = &[
