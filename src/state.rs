@@ -20,6 +20,7 @@ pub enum SaveError {
     IsOnline,
     IsOffline,
     IsLoading,
+    PortInUse,
     IOError,
 }
 
@@ -270,7 +271,7 @@ impl Iterator for SaveIter {
 }
 
 /// reads all the properties
-fn read_properties(path: impl AsRef<Path>) -> Result<HashMap<String, String>, SaveError> {
+pub fn read_properties(path: impl AsRef<Path>) -> Result<HashMap<String, String>, SaveError> {
     use std::fs::File;
     use std::io::{BufRead, BufReader};
     let mut out = HashMap::new();
@@ -289,8 +290,29 @@ fn read_properties(path: impl AsRef<Path>) -> Result<HashMap<String, String>, Sa
     Ok(out)
 }
 
-/// writes the propertie to the file
-fn write_properties(
+/// reads one property, returns Ok(None) if not found
+pub fn read_property(path: impl AsRef<Path>, name: &str) -> Result<Option<String>, SaveError> {
+    use std::fs::File;
+    use std::io::{BufRead, BufReader};
+
+    let reader = BufReader::new(File::open(path)?);
+
+    for line in reader.lines() {
+        let line = line?;
+        if !line.starts_with('#') {
+            if let Some((key, value)) = line.split_once('=') {
+                if key.trim() == name {
+                    return Ok(Some(parse_prop_unescaped(value)));
+                }
+            }
+        }
+    }
+
+    Ok(None)
+}
+
+/// writes the properties to the file
+pub fn write_properties(
     path: impl AsRef<Path> + Clone,
     mut values: HashMap<String, PropValue>,
 ) -> Result<(), SaveError> {

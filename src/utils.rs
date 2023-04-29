@@ -84,10 +84,6 @@ where
             err: "PropertyNotFound",
             desc: "Essa propiedade não existe",
         };
-        const IOERROR: SaveErrorJson = SaveErrorJson {
-            err: "IOError",
-            desc: "Ocorreu um erro ao operar os arquivos",
-        };
         const ISONLINE: SaveErrorJson = SaveErrorJson {
             err: "IsOnline",
             desc: "O save esta ligado",
@@ -96,9 +92,17 @@ where
             err: "IsOffline",
             desc: "O save esta desligado",
         };
+        const PORTINUSE: SaveErrorJson = SaveErrorJson {
+            err: "PortInUse",
+            desc: "A porta já esta sendo usada por outro save",
+        };
         const ISLOADING: SaveErrorJson = SaveErrorJson {
             err: "IsLoading",
             desc: "O save esta ligando",
+        };
+        const IOERROR: SaveErrorJson = SaveErrorJson {
+            err: "IOError",
+            desc: "Ocorreu um erro ao operar os arquivos",
         };
         match self {
             WarpResult::Reply(reply) => reply.into_response(),
@@ -136,6 +140,11 @@ where
                 .into_response(),
                 SaveError::IsOffline => warp::reply::with_status(
                     warp::reply::json(&ISOFFLINE),
+                    warp::http::StatusCode::BAD_REQUEST,
+                )
+                .into_response(),
+                SaveError::PortInUse => warp::reply::with_status(
+                    warp::reply::json(&PORTINUSE),
                     warp::http::StatusCode::BAD_REQUEST,
                 )
                 .into_response(),

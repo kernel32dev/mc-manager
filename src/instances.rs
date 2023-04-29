@@ -1,5 +1,6 @@
+use crate::state::read_property;
 use crate::state::{save::exists, SaveError};
-use crate::utils::{append_json_string, append_comma_separated};
+use crate::utils::{append_comma_separated, append_json_string};
 use lazy_static::lazy_static;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
@@ -23,6 +24,7 @@ pub enum InstanceStatus {
 
 struct Instance {
     status: InstanceStatus,
+    port: u16,
     stdin: Arc<Mutex<ChildStdin>>,
 }
 
@@ -40,16 +42,26 @@ impl Instance {
                 }
             }
             InstanceStatus::Shutdown => Ok(()),
-        } 
+        }
     }
 }
 
 /// creates the instance, returns an error if it is already online
 pub fn start_instance(name: &str) -> Result<(), SaveError> {
     exists(name)?;
+    let port = match read_property(format!("saves/{name}/server.properties"), "server-port")? {
+        Some(port) => match port.parse() {
+            Ok(port) => port,
+            Err(_) => return Err(SaveError::IOError),
+        },
+        None => return Err(SaveError::IOError),
+    };
     let mut instances = INSTANCES.write().unwrap();
     if instances.contains_key(name) {
         return Err(SaveError::IsOnline);
+    }
+    if instances.iter().any(|x| x.1.port == port) {
+        return Err(SaveError::PortInUse);
     }
     let mut directory = std::env::current_dir().expect("current_dir");
     directory.push("saves");
@@ -70,6 +82,7 @@ pub fn start_instance(name: &str) -> Result<(), SaveError> {
     let stdout = BufReader::new(child.stdout.take().unwrap());
     let instance = Instance {
         status: InstanceStatus::Loading,
+        port,
         stdin,
     };
     let name_arc = Arc::new(name.to_owned());
@@ -168,15 +181,19 @@ pub fn query_instance(name: &str) -> Result<InstanceStatus, SaveError> {
 pub fn instance_status_summary() -> String {
     let mut out = String::with_capacity(4 * 1024);
     out.push('{');
-    append_comma_separated(INSTANCES.read().unwrap().iter(), &mut out, |out, (name, instance)| {
-        append_json_string(out, name);
-        match instance.status {
-            InstanceStatus::Offline => unreachable!(),
-            InstanceStatus::Loading => *out += r#":"loading""#,
-            InstanceStatus::Online => *out += r#":"online""#,
-            InstanceStatus::Shutdown => *out += r#":"shutdown""#,
-        }
-    });
+    append_comma_separated(
+        INSTANCES.read().unwrap().iter(),
+        &mut out,
+        |out, (name, instance)| {
+            append_json_string(out, name);
+            match instance.status {
+                InstanceStatus::Offline => unreachable!(),
+                InstanceStatus::Loading => *out += r#":"loading""#,
+                InstanceStatus::Online => *out += r#":"online""#,
+                InstanceStatus::Shutdown => *out += r#":"shutdown""#,
+            }
+        },
+    );
     out.push('}');
     out
 }
