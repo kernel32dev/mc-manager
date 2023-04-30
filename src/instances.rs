@@ -1,5 +1,5 @@
-use crate::state::{read_property, save};
-use crate::state::{save::exists};
+use crate::properties::read_property;
+use crate::state::save;
 use crate::utils::{append_comma_separated, append_json_string, SaveError};
 use crate::server::is_shutdown;
 use lazy_static::lazy_static;
@@ -78,7 +78,7 @@ impl InstanceVector {
 
 /// creates the instance, returns an error if it is already online
 pub async fn start_instance(name: &str) -> Result<(), SaveError> {
-    exists(name)?;
+    save::exists(name)?;
     let port = match read_property(format!("saves/{name}/server.properties"), "server-port")? {
         Some(port) => match port.parse() {
             Ok(port) => port,
@@ -194,7 +194,7 @@ pub async fn start_instance(name: &str) -> Result<(), SaveError> {
 
 /// stops the instance, returns immedialty, will return an error if it is not online
 pub async fn stop_instance(name: &str) -> Result<(), SaveError> {
-    exists(name)?;
+    save::exists(name)?;
     let mut instances = INSTANCES.write().await;
     if let Some(instance) = instances.get_mut(name) {
         instance.stop().await
@@ -205,7 +205,7 @@ pub async fn stop_instance(name: &str) -> Result<(), SaveError> {
 
 /// checks if the instance is online, may returns an error if it is not online
 pub async fn query_instance(name: &str) -> Result<InstanceStatus, SaveError> {
-    exists(name)?;
+    save::exists(name)?;
     let instances = INSTANCES.read().await;
     if let Some(instance) = instances.get(name) {
         Ok(instance.status)
@@ -216,7 +216,7 @@ pub async fn query_instance(name: &str) -> Result<InstanceStatus, SaveError> {
 
 /// returns a stream to the stdout of the stream, optionally you can skip some bytes of the output
 pub async fn read_instance(name: &str) -> Result<Arc<InstanceVector>, SaveError> {
-    exists(name)?;
+    save::exists(name)?;
     let instances = INSTANCES.read().await;
     if let Some(instance) = instances.get(name) {
         Ok(instance.vector.clone())
@@ -227,7 +227,7 @@ pub async fn read_instance(name: &str) -> Result<Arc<InstanceVector>, SaveError>
 
 /// returns a stream to the stdout of the stream, optionally you can skip some bytes of the output
 pub async fn write_instance(name: &str, command: &str) -> Result<(), SaveError> {
-    exists(name)?;
+    save::exists(name)?;
     if command.as_bytes().iter().any(|x| matches!(x, 0..=31 | 127)) {
         return Err(SaveError::BadRequest);
     }

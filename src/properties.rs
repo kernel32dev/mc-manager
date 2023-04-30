@@ -1,6 +1,7 @@
-use serde::Deserialize;
 
-use crate::utils::append_prop_escaped;
+use std::{collections::HashMap, path::Path};
+use serde::Deserialize;
+use crate::utils::{SaveError, now};
 
 /// defines a property completely
 pub struct PropDef {
@@ -505,3 +506,285 @@ pub const PROPERTIES: &[PropDef] = &[
         desc: "Enables a whitelist on the server. With a whitelist enabled, users not on the whitelist cannot connect. Intended for private servers, such as those for real-life friends or strangers carefully selected via an application process, for example. false - No white list is used. true - The file whitelist.json is used to generate the white list. Note: Ops are automatically whitelisted, and there is no need to add them to the whitelist.",
     },
 ];
+
+/// reads all the properties
+pub fn read_properties(path: impl AsRef<Path>) -> Result<HashMap<String, String>, SaveError> {
+    use std::fs::File;
+    use std::io::{BufRead, BufReader};
+    let mut out = HashMap::new();
+
+    let reader = BufReader::new(File::open(path)?);
+
+    for line in reader.lines() {
+        let line = line?;
+        if !line.starts_with('#') {
+            if let Some((key, value)) = line.split_once('=') {
+                out.insert(key.trim().to_owned(), parse_prop_unescaped(value));
+            }
+        }
+    }
+
+    Ok(out)
+}
+
+/// reads one property, returns Ok(None) if not found
+pub fn read_property(path: impl AsRef<Path>, name: &str) -> Result<Option<String>, SaveError> {
+    use std::fs::File;
+    use std::io::{BufRead, BufReader};
+
+    let reader = BufReader::new(File::open(path)?);
+
+    for line in reader.lines() {
+        let line = line?;
+        if !line.starts_with('#') {
+            if let Some((key, value)) = line.split_once('=') {
+                if key.trim() == name {
+                    return Ok(Some(parse_prop_unescaped(value)));
+                }
+            }
+        }
+    }
+
+    Ok(None)
+}
+
+/// writes the properties to the file
+pub fn write_properties(
+    path: impl AsRef<Path> + Clone,
+    mut values: HashMap<String, PropValue>,
+) -> Result<(), SaveError> {
+    use std::fs::File;
+    use std::io::{BufRead, BufReader};
+
+    // the contents of the entire file
+    let mut out = String::with_capacity(4 * 1024);
+
+    let reader = BufReader::new(File::open(path.clone())?);
+
+    for line in reader.lines() {
+        let line = line?;
+        if !line.starts_with('#') {
+            if let Some((raw_key, _)) = line.split_once('=') {
+                if let Some(new_value) = values.remove(raw_key.trim()) {
+                    out += raw_key;
+                    out += "=";
+                    new_value.to_prop_value(&mut out);
+                    out += "\r\n";
+                    continue;
+                }
+            }
+        }
+        out += &line;
+        out += "\r\n";
+    }
+
+    for (key, value) in values {
+        out += &key;
+        out += "=";
+        value.to_prop_value(&mut out);
+        out += "\r\n";
+    }
+
+    std::fs::write(path, out)?;
+
+    Ok(())
+}
+
+pub fn validate_properties(
+    values: &HashMap<String, PropValue>,
+    access_needed: PropAccess,
+) -> Result<(), SaveError> {
+    for (key, value) in values.iter() {
+        if let Some(prop) = PROPERTIES.iter().filter(|prop| prop.name == key).next() {
+            match (access_needed, prop.access) {
+                (_, PropAccess::Write)
+                | (PropAccess::None, _)
+                | (PropAccess::Read, PropAccess::Read) => match &prop.ty {
+                    PropType::Bool(_) => {
+                        if let PropValue::Boolean(_) = value {
+                            continue;
+                        }
+                    }
+                    PropType::String(_) => {
+                        if let PropValue::String(_) = value {
+                            continue;
+                        }
+                    }
+                    PropType::Int(_, min, max) => {
+                        if let PropValue::Int(value) = value {
+                            if value >= min && value <= max {
+                                continue;
+                            }
+                        } else if let PropValue::Uint(value) = value {
+                            if let Ok(value) = i64::try_from(*value) {
+                                if value >= *min && value <= *max {
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                    PropType::Uint(_, min, max) => {
+                        if let PropValue::Uint(value) = value {
+                            if value >= min && value <= max {
+                                continue;
+                            }
+                        } else if let PropValue::Int(value) = value {
+                            if let Ok(value) = u64::try_from(*value) {
+                                if value >= *min && value <= *max {
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                    PropType::Datetime => {
+                        if let PropValue::String(value) = value {
+                            if value.len() == 19 {
+                                if let Ok(_) = chrono::NaiveDateTime::parse_from_str(
+                                    value,
+                                    "%Y-%m-%d %H:%M:%S",
+                                ) {
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                    PropType::IntEnum(_, values) => {
+                        if let PropValue::Int(value) = value {
+                            if *value >= 0 && *value < values.len() as i64 {
+                                continue;
+                            }
+                        } else if let PropValue::Uint(value) = value {
+                            if *value < values.len() as u64 {
+                                continue;
+                            }
+                        }
+                    }
+                    PropType::StrEnum(_, values) => {
+                        if let PropValue::String(value) = value {
+                            if values.iter().any(|(valid, _)| *valid == value) {
+                                continue;
+                            }
+                        }
+                    }
+                },
+                _ => {}
+            }
+        }
+        println!("[!] Warning invalid property: {}", key);
+        return Err(SaveError::InvalidProperty);
+    }
+    Ok(())
+}
+
+pub fn generate_properties(version: &str, values: &HashMap<String, PropValue>) -> String {
+    let mut out = String::new();
+    let now = now();
+    for prop in PROPERTIES.iter() {
+        if prop.access == PropAccess::None {
+            continue;
+        }
+        out += prop.name;
+        out += "=";
+        if prop.name == "mc-manager-server-version" {
+            out += version;
+        } else if let (PropAccess::Write, Some(value)) = (prop.access, values.get(prop.name)) {
+            value.to_prop_value(&mut out);
+        } else {
+            match &prop.ty {
+                PropType::Bool(true) => out += "true",
+                PropType::Bool(false) => out += "false",
+                PropType::String(value) => append_prop_escaped(&mut out, *value),
+                PropType::Int(value, _, _) => out += &value.to_string(),
+                PropType::Uint(value, _, _) => out += &value.to_string(),
+                PropType::Datetime => out += &now,
+                PropType::IntEnum(value, _) => out += &value.to_string(),
+                PropType::StrEnum(value, members) => append_prop_escaped(&mut out, (*members)[*value].0),
+            }
+        }
+        out += "\r\n";
+    }
+    out
+}
+
+pub fn append_prop_escaped(out: &mut String, value: &str) {
+    if !value.contains(|x| matches!(x, '=' | ':' | '\0'..='\x1F')) {
+        out.push_str(value);
+    } else {
+        for char in value.chars() {
+            match char {
+                '=' => out.push_str(r"\="),
+                ':' => out.push_str(r"\:"),
+                '\n' => out.push_str(r"\n"),
+                '\r' => out.push_str(r"\r"),
+                '\t' => out.push_str(r"\t"),
+                '\0'..='\x1F' | '\x7F' => {
+                    *out += r"\u00";
+                    let upper = char as u8 >> 4;
+                    if upper < 10 {
+                        out.push((b'0' + upper) as char);
+                    } else {
+                        out.push((b'A' + upper - 10) as char);
+                    }
+                    let lower = char as u8 & 0xF;
+                    if lower < 10 {
+                        out.push((b'0' + lower) as char);
+                    } else {
+                        out.push((b'A' + lower - 10) as char);
+                    }
+                }
+                _ => out.push(char),
+            }
+        }
+    }
+}
+
+pub fn parse_prop_unescaped(value: &str) -> String {
+    if !value.contains('\\') {
+        value.to_owned()
+    } else {
+        let mut out = String::new();
+        let mut chars = value.chars().peekable();
+        while let Some(char) = chars.next() {
+            if char == '\\' {
+                if let Some(next) = chars.next() {
+                    match next {
+                        'n' => out.push('\n'),
+                        'r' => out.push('\r'),
+                        't' => out.push('\t'),
+                        'u' => {
+                            let mut code = 0;
+                            for _ in 0..4 {
+                                if let Some(next) = chars.peek() {
+                                    match *next {
+                                        '0'..='9' => {
+                                            code = (code << 4) | (*next as u8 - b'0') as u32
+                                        }
+                                        'A'..='F' => {
+                                            code = (code << 4) | (*next as u8 - b'A' + 10) as u32
+                                        }
+                                        'a'..='f' => {
+                                            code = (code << 4) | (*next as u8 - b'a' + 10) as u32
+                                        }
+                                        _ => break,
+                                    }
+                                    chars.next();
+                                } else {
+                                    break;
+                                }
+                            }
+                            if let Some(char) = char::from_u32(code) {
+                                out.push(char);
+                            }
+                        }
+                        _ => out.push(next),
+                    }
+                } else {
+                    out.push(char);
+                }
+            } else {
+                out.push(char);
+            }
+        }
+        out
+    }
+}

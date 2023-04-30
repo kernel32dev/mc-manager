@@ -182,6 +182,10 @@ fn json_response_with_status(body: String, status: warp::http::StatusCode) -> Re
     Response::from_parts(parts, body)
 }
 
+pub fn now() -> String {
+    chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
+}
+
 pub fn append_json_string(out: &mut String, text: &str) {
     *out += "\"";
     for char in text.chars() {
@@ -230,88 +234,5 @@ pub fn append_comma_separated<T>(
     }
     if at_least_one_comma {
         out.pop();
-    }
-}
-
-pub fn append_prop_escaped(out: &mut String, value: &str) {
-    if !value.contains(|x| matches!(x, '=' | ':' | '\0'..='\x1F')) {
-        out.push_str(value);
-    } else {
-        for char in value.chars() {
-            match char {
-                '=' => out.push_str(r"\="),
-                ':' => out.push_str(r"\:"),
-                '\n' => out.push_str(r"\n"),
-                '\r' => out.push_str(r"\r"),
-                '\t' => out.push_str(r"\t"),
-                '\0'..='\x1F' | '\x7F' => {
-                    *out += r"\u00";
-                    let upper = char as u8 >> 4;
-                    if upper < 10 {
-                        out.push((b'0' + upper) as char);
-                    } else {
-                        out.push((b'A' + upper - 10) as char);
-                    }
-                    let lower = char as u8 & 0xF;
-                    if lower < 10 {
-                        out.push((b'0' + lower) as char);
-                    } else {
-                        out.push((b'A' + lower - 10) as char);
-                    }
-                }
-                _ => out.push(char),
-            }
-        }
-    }
-}
-
-pub fn parse_prop_unescaped(value: &str) -> String {
-    if !value.contains('\\') {
-        value.to_owned()
-    } else {
-        let mut out = String::new();
-        let mut chars = value.chars().peekable();
-        while let Some(char) = chars.next() {
-            if char == '\\' {
-                if let Some(next) = chars.next() {
-                    match next {
-                        'n' => out.push('\n'),
-                        'r' => out.push('\r'),
-                        't' => out.push('\t'),
-                        'u' => {
-                            let mut code = 0;
-                            for _ in 0..4 {
-                                if let Some(next) = chars.peek() {
-                                    match *next {
-                                        '0'..='9' => {
-                                            code = (code << 4) | (*next as u8 - b'0') as u32
-                                        }
-                                        'A'..='F' => {
-                                            code = (code << 4) | (*next as u8 - b'A' + 10) as u32
-                                        }
-                                        'a'..='f' => {
-                                            code = (code << 4) | (*next as u8 - b'a' + 10) as u32
-                                        }
-                                        _ => break,
-                                    }
-                                    chars.next();
-                                } else {
-                                    break;
-                                }
-                            }
-                            if let Some(char) = char::from_u32(code) {
-                                out.push(char);
-                            }
-                        }
-                        _ => out.push(next),
-                    }
-                } else {
-                    out.push(char);
-                }
-            } else {
-                out.push(char);
-            }
-        }
-        out
     }
 }
