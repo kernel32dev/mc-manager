@@ -1,6 +1,6 @@
 
 use crate::properties::*;
-use crate::instances::{query_instance, InstanceStatus};
+use crate::instances::InstanceStatus;
 use crate::utils::{append_json_string, append_comma_separated, append_prop_escaped, parse_prop_unescaped};
 use std::collections::HashMap;
 use std::io::ErrorKind;
@@ -11,18 +11,7 @@ use std::path::Path;
 /// instanciate with `Save::iter()`
 pub struct SaveIter(Option<std::fs::ReadDir>);
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum SaveError {
-    NotFound,
-    AlreadyExists,
-    VersionNotFound,
-    InvalidProperty,
-    IsOnline,
-    IsOffline,
-    IsLoading,
-    PortInUse,
-    IOError,
-}
+use crate::utils::SaveError;
 
 impl From<std::io::Error> for SaveError {
     fn from(error: std::io::Error) -> Self {
@@ -67,7 +56,7 @@ pub mod save {
             // the creation failed
             return Err(SaveError::IOError);
         }
-        load(name)
+        load(name, InstanceStatus::Offline)
     }
     /// delete the save specified and all backups
     pub fn delete(name: &str) -> Result<(), SaveError> {
@@ -75,14 +64,16 @@ pub mod save {
         Ok(())
     }
     /// returns a valid json with all of the properties for a save, including its name, and its status
-    pub fn load(name: &str) -> Result<String, SaveError> {
+    ///
+    /// you must query status yourself, this is so the functions stays sync
+    pub fn load(name: &str, status: InstanceStatus) -> Result<String, SaveError> {
         exists(name)?;
         let properties = read_properties(format!("saves/{name}/server.properties"))?;
         let mut out = String::with_capacity(4096);
         out += "{\"name\":\"";
         out += name;
         out += "\",\"status\":";
-        match query_instance(name)? {
+        match status {
             InstanceStatus::Offline => out += "\"offline\"",
             InstanceStatus::Loading => out += "\"loading\"",
             InstanceStatus::Online => out += "\"online\"",
@@ -118,11 +109,7 @@ pub mod save {
     pub fn modify(name: &str, values: HashMap<String, PropValue>) -> Result<(), SaveError> {
         exists(name)?;
         validate_properties(&values, PropAccess::Write)?;
-        if query_instance(name)? == InstanceStatus::Offline {
-            write_properties(format!("saves/{name}/server.properties"), values)
-        } else {
-            Err(SaveError::IsOnline)
-        }
+        write_properties(format!("saves/{name}/server.properties"), values)
     }
     /// update the access time of the world specified to now
     pub fn access(name: &str) -> Result<(), SaveError> {

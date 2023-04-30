@@ -3,6 +3,8 @@ document.addEventListener("DOMContentLoaded", main);
 
 // GLOBALS //
 
+let current_screen = "saves-screen";
+
 let click_sound = null;
 
 let schema = null;
@@ -12,6 +14,8 @@ let create_properties = null;
 let saves = {};
 let saves_elem = {};
 let selected = null;
+
+let ws = null;
 
 // API FUNCTIONS //
 
@@ -95,6 +99,11 @@ function api_stop_save(name) {
     return api("POST", "/api/stop_save", {name});
 }
 
+function api_command(name, command) {
+    return api("POST", "/api/command", {name, command});
+
+}
+
 // DOM FUNCTIONS //
 
 function create_saves(new_saves) {
@@ -173,8 +182,18 @@ function delete_save(name) {
     delete saves_elem[name];
 }
 
-function show_screen(screen) {
-    const SCREENS = ["saves-screen", "create-screen", "modify-screen", "delete-screen"];
+function show_screen(screen, within_popstate_handler) {
+    const SCREENS = ["saves-screen", "create-screen", "modify-screen", "delete-screen", "console-screen"];
+    if (current_screen === screen) {
+        return;
+    }
+    if (current_screen === "saves-screen" && within_popstate_handler === undefined) {
+        history.pushState({screen}, "", undefined);
+    }
+    if (ws !== null) {
+        ws.close();
+        ws = null;
+    }
     if (selected === null && (screen === "modify-screen" || screen === "delete-screen")) {
         return;
     }
@@ -185,6 +204,7 @@ function show_screen(screen) {
             elements[j].classList.toggle("hide", hide);
         }
     }
+    current_screen = screen;
     if (screen === "create-screen") {
         unselect_save();
         document.getElementById("create-param-name").focus();
@@ -196,6 +216,36 @@ function show_screen(screen) {
     } else if (screen === "delete-screen") {
         let message = document.getElementById("delete-message-area");
         message.innerText = "Você tem certeza que quer apagar o mundo \"" + selected + "\"";
+    } else if (screen === "console-screen") {
+        document.getElementById("console-input").focus();
+        let output = document.getElementById("console-output");
+        let name = selected;
+        let cursor = 0;
+        clear_elem(output);
+        function onerror(error) {
+            ws.close();
+            ws = null;
+            setTimeout(function() {
+                ws = new WebSocket("ws://localhost:1234/api/console/" + cursor + "/" + name);
+                ws.onerror = onerror;
+                ws.onmessage = onmessage;
+            }, 3000);
+            console.error(error);
+        }
+        function onmessage(ev) {
+            cursor += ev.data.size;
+            ev.data.text().then(function(text) {
+                let lines = text.split('\n');
+                output.append(lines[0]);
+                for (let i = 1; i < lines.length; i++) {
+                    output.append(document.createElement("br"), lines[i]);
+                }
+                console.log("message", text);
+            }).catch(console.error);
+        }
+        ws = new WebSocket("ws://localhost:1234/api/console/0/" + name);
+        ws.onerror = onerror;
+        ws.onmessage = onmessage;
     }
 }
 
@@ -239,10 +289,37 @@ async function main() {
         button.addEventListener("click", play_click_sound);
     });
 
+    // initialize popstate handler
+
+    addEventListener("popstate", function(data) {
+        if (data.state !== null && typeof data.state.screen === "string") {
+            let screen = data.state.screen;
+            if (screen === "modify-screen" || screen === "delete-screen") {
+                if (selected !== null) {
+                    show_screen(screen, true);
+                }
+            } else if (screen === "console-screen") {
+                if (selected !== null && saves[selected] !== undefined && saves[selected].status !== "offline") {
+                    show_screen(screen, true);
+                }
+            } else if (screen === "create-screen" || screen === "saves-screen") {
+                show_screen(screen, true);
+            }
+        } else {
+            show_screen("saves-screen", true);
+        }
+    });
+
     // initialize saves-screen
 
     document.body.addEventListener("keydown", function(ev) {
-        if (ev.key === "Escape") unselect_save();
+        if (ev.key === "Escape") {
+            if (ws !== null) {
+                show_screen("saves-screen");
+            } else {
+                unselect_save();
+            }
+        }
     });
     document.getElementById("saves-search").addEventListener("input", update_filter);
     document.getElementById("saves-button-play").addEventListener("click", function() {
@@ -283,7 +360,9 @@ async function main() {
         }).catch(console.error);
     });
     document.getElementById("saves-button-console").addEventListener("click", function() {
-        alert("TODO: create console-screen")
+        if (selected !== null && saves[selected].status !== "offline") {
+            show_screen("console-screen");
+        }
     });
 
     // initialize create-screen buttons
@@ -345,6 +424,16 @@ async function main() {
             });
         } else {
             show_screen("saves-screen");
+        }
+    });
+
+    // initialize console-screen input
+
+    document.getElementById('console-input').addEventListener("keydown", function(ev) {
+        if (ev.key === "Enter" && selected !== null) {
+            api_command(selected, this.value).catch(console.error);
+            this.value = "";
+            this.focus();
         }
     });
 
@@ -419,8 +508,10 @@ function select_save(name) {
         enable("saves-button-play", "saves-button-console");
         play_button_caption.innerText = "Parar mundo";
     } else if (elem.classList.contains("loading")) {
+        enable("saves-button-console");
         play_button_caption.innerText = "Iniciar mundo";
     } else if (elem.classList.contains("shutdown")) {
+        enable("saves-button-console");
         play_button_caption.innerText = "Parar mundo";
     }
     selected = name;

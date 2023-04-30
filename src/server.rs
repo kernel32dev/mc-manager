@@ -1,23 +1,37 @@
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use warp::Filter;
 use crate::api::*;
 use crate::instances::stop_all_instances;
 use crate::utils::filters;
 
+static SHUTDOWN: AtomicBool = AtomicBool::new(false);
+
 const PORT: u16 = 1234;
 
+pub fn is_shutdown() -> bool {
+    SHUTDOWN.load(Ordering::Relaxed)
+}
+
+fn set_shutdown() {
+    SHUTDOWN.store(true, Ordering::Relaxed);
+}
+
 pub fn serve(shutdown: Option<tokio::sync::oneshot::Receiver<()>>) {
+
     let apis = filters!(
-        GET versions;
-        GET saves;
-        GET icons String;
-        GET schema;
-        GET status;
-        POST CreateSave;
-        POST ModifySave;
-        POST DeleteSave;
-        POST StartSave;
-        POST StopSave;
+        GET fn versions;
+        GET async fn saves;
+        GET fn icons String;
+        GET fn schema;
+        GET async fn status;
+        WS async fn console usize String;
+        POST fn create_save;
+        POST async fn modify_save;
+        POST async fn delete_save;
+        POST async fn start_save;
+        POST async fn stop_save;
+        POST async fn command;
     );
 
     #[cfg(not(debug_assertions))] // cd into folder of executable
@@ -49,7 +63,8 @@ pub fn serve(shutdown: Option<tokio::sync::oneshot::Receiver<()>>) {
                 tokio::signal::ctrl_c().await.unwrap();
                 println!("[*] CTRL-C detected");
             }
-            stop_all_instances();
+            set_shutdown();
+            stop_all_instances().await;
         }).1
     );
 }

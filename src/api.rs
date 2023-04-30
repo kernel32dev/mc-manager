@@ -1,13 +1,14 @@
-
 use std::collections::HashMap;
+use std::convert::Infallible;
 
-use crate::instances::{instance_status_summary, start_instance, stop_instance};
+use crate::instances::*;
 use crate::properties::PropValue;
-use crate::state::{save, SaveError};
-use crate::utils::{catch, WarpResult, json_response};
+use crate::server::is_shutdown;
+use crate::state::save;
+use crate::utils::{catch, json_response, WarpResult, SaveError};
 use serde::Deserialize;
-use warp::Reply;
 use warp::reply::Response;
+use warp::Reply;
 
 // APIS //
 
@@ -18,10 +19,10 @@ pub struct CreateSave {
     values: HashMap<String, PropValue>,
 }
 
-impl CreateSave {
-    pub fn post(self) -> WarpResult<Response> {
-        save::create(&self.name, &self.version, self.values).map(json_response).into()
-    }
+pub fn create_save(body: CreateSave) -> WarpResult<Response> {
+    save::create(&body.name, &body.version, body.values)
+        .map(json_response)
+        .into()
 }
 
 #[derive(Deserialize)]
@@ -30,9 +31,11 @@ pub struct ModifySave {
     values: HashMap<String, PropValue>,
 }
 
-impl ModifySave {
-    pub fn post(self) -> WarpResult<Response> {
-        save::modify(&self.name, self.values).map(|_| warp::reply().into_response()).into()
+pub async fn modify_save(body: ModifySave) -> Result<WarpResult<Response>, Infallible> {
+    match query_instance(&body.name).await {
+        Ok(InstanceStatus::Offline) => Ok(save::modify(&body.name, body.values).into()),
+        Ok(status) => Ok(WarpResult::Err(status.to_error())),
+        Err(error) => Ok(WarpResult::Err(error)),
     }
 }
 
@@ -41,9 +44,11 @@ pub struct DeleteSave {
     name: String,
 }
 
-impl DeleteSave {
-    pub fn post(self) -> WarpResult<Response> {
-        save::delete(&self.name).map(|_| warp::reply().into_response()).into()
+pub async fn delete_save(body: DeleteSave) -> Result<WarpResult<Response>, Infallible> {
+    match query_instance(&body.name).await {
+        Ok(InstanceStatus::Offline) => Ok(save::delete(&body.name).into()),
+        Ok(status) => Ok(WarpResult::Err(status.to_error())),
+        Err(error) => Ok(WarpResult::Err(error)),
     }
 }
 
@@ -52,10 +57,8 @@ pub struct StartSave {
     name: String,
 }
 
-impl StartSave {
-    pub fn post(self) -> WarpResult<Response> {
-        start_instance(&self.name).map(|_| warp::reply().into_response()).into()
-    }
+pub async fn start_save(body: StartSave) -> Result<WarpResult<Response>, Infallible> {
+    Ok(start_instance(&body.name).await.into())
 }
 
 #[derive(Deserialize)]
@@ -63,10 +66,8 @@ pub struct StopSave {
     name: String,
 }
 
-impl StopSave {
-    pub fn post(self) -> WarpResult<Response> {
-        stop_instance(&self.name).map(|_| warp::reply().into_response()).into()
-    }
+pub async fn stop_save(body: StopSave) -> Result<WarpResult<Response>, Infallible> {
+    Ok(stop_instance(&body.name).await.into())
 }
 
 pub fn versions() -> WarpResult<warp::reply::Json> {
@@ -86,17 +87,18 @@ pub fn versions() -> WarpResult<warp::reply::Json> {
     });
 
     match versions {
-        Ok(versions) => WarpResult::Reply(warp::reply::json(&versions)),
-        Err(_) => WarpResult::INTERNAL_SERVER_ERROR,
-    }
+        Ok(versions) => Ok(warp::reply::json(&versions)),
+        Err(_) => Err(SaveError::IOError),
+    }.into()
 }
 
-pub fn saves() -> WarpResult<Response> {
-    let result: Result<Response, SaveError> = catch!({
+pub async fn saves() -> Result<WarpResult<Response>, Infallible> {
+    Ok((|| async {
         let mut body = String::with_capacity(16 * 1024);
         body.push_str("{\"saves\":[");
         for name in save::iter()? {
-            body.push_str(&save::load(&name?)?);
+            let name = name?;
+            body.push_str(&save::load(&name, query_instance(&name).await?)?);
             body.push(',');
         }
         match body.pop() {
@@ -106,20 +108,19 @@ pub fn saves() -> WarpResult<Response> {
         }
         body.push('}');
         Ok(json_response(body))
-    });
-    result.into()
+    })().await.into())
 }
 
 pub fn icons(save: String) -> WarpResult<warp::reply::WithHeader<Vec<u8>>> {
     if !is_safe(&save) {
-        return WarpResult::BAD_REQUEST;
+        return WarpResult::Err(SaveError::BadRequest);
     }
     const UNKNOWN_PNG: &[u8] = include_bytes!("../static/assets/unknown.png");
     let data = match std::fs::read(format!("saves/{save}/world/icon.png")) {
         Ok(data) => data,
         Err(_) => UNKNOWN_PNG.to_owned(),
     };
-    WarpResult::Reply(warp::reply::with_header(
+    WarpResult::Ok(warp::reply::with_header(
         data,
         "Content-Type",
         "image/x-png",
@@ -127,11 +128,63 @@ pub fn icons(save: String) -> WarpResult<warp::reply::WithHeader<Vec<u8>>> {
 }
 
 pub fn schema() -> WarpResult<Response> {
-    WarpResult::Reply(json_response(save::schema()))
+    WarpResult::Ok(json_response(save::schema()))
 }
 
-pub fn status() -> WarpResult<Response> {
-    WarpResult::Reply(json_response(instance_status_summary()))
+pub async fn status() -> Result<WarpResult<Response>, Infallible> {
+    Ok(WarpResult::Ok(json_response(instance_status_summary().await)))
+}
+
+#[derive(Deserialize)]
+pub struct Command {
+    name: String,
+    command: String,
+}
+
+pub async fn command(body: Command) -> Result<WarpResult<Response>, Infallible> {
+    //use futures::FutureExt;
+    Ok(write_instance(&body.name, &body.command).await.into())
+}
+
+pub async fn console(mut offset: usize, save: String, ws: warp::ws::Ws) -> Result<WarpResult<impl Reply>, Infallible> {
+    //use futures::FutureExt;
+    match read_instance(&save).await {
+        Ok(vector) => Ok(WarpResult::Ok(ws.on_upgrade(move |mut ws| async move {
+            println!("[*] Websocket stream spawned");
+            use futures::SinkExt;
+            let mut subscription = vector.subscribe();
+            while !is_shutdown() {
+                let pair = {
+                    let borrow = subscription.borrow();
+                    let data = &borrow.0;
+                    let alive = &borrow.1;
+                    if offset >= data.len() {
+                        if !*alive {
+                            println!("[*] Websocket stream finished");
+                            break;
+                        }
+                        None
+                    } else {
+                        Some((data[offset..].to_owned(), data.len()))
+                    }
+                };
+                if let Some((payload, new_offset)) = pair {
+                    if ws.send(warp::ws::Message::binary(payload)).await.is_err() {
+                        println!("[*] Websocket stream finished, due to error");
+                        break;
+                    }
+                    println!("[*] Websocket sent {} bytes", new_offset - offset);
+                    offset = new_offset;
+                }
+                if subscription.changed().await.is_err() {
+                    println!("[*] Websocket stream finished, because sender half was dropped");
+                    break;
+                }
+            }
+            let _ = ws.close().await;
+        }))),
+        Err(error) => Ok(WarpResult::Err(error)),
+    }
 }
 
 fn is_safe(text: &str) -> bool {

@@ -1,6 +1,16 @@
 macro_rules! filters {
-    (GET $func_name:ident $($ty:ty)*;) => {{
-        use warp::Filter;
+    (GET async fn $func_name:ident $($ty:ty)*;) => {{
+        warp::get()
+            .and(warp::path("api"))
+            .and(warp::path(const_str::convert_ascii_case!(
+                snake,
+                stringify!($func_name)
+            )))
+            $(.and(warp::path::param::<$ty>()))*
+            .and(warp::path::end())
+            .and_then($func_name)
+    }};
+    (GET fn $func_name:ident $($ty:ty)*;) => {{
         warp::get()
             .and(warp::path("api"))
             .and(warp::path(const_str::convert_ascii_case!(
@@ -11,25 +21,59 @@ macro_rules! filters {
             .and(warp::path::end())
             .map($func_name)
     }};
-    (GET $func_name:ident $($ty:ty)*; $($tail:tt)+) => {
-        filters!(GET $func_name $($ty)*;).or(filters!($($tail)+))
-    };
-    (POST $struct_name:ident $($ty:ty)*;) => {{
-        use warp::Filter;
+    (POST async fn $func_name:ident $($ty:ty)*;) => {{
         warp::post()
             .and(warp::path("api"))
             .and(warp::path(const_str::convert_ascii_case!(
                 snake,
-                stringify!($struct_name)
+                stringify!($func_name)
             )))
             $(.and(warp::path::param::<$ty>()))*
             .and(warp::path::end())
             .and(warp::body::content_length_limit(1024 * 16))
             .and(warp::body::json())
-            .map(<$struct_name>::post)
+            .and_then($func_name)
     }};
-    (POST $struct_name:ident $($ty:ty)*; $($tail:tt)+) => {
-        filters!(POST $struct_name $($ty)*;).or(filters!($($tail)+))
+    (POST fn $func_name:ident $($ty:ty)*;) => {{
+        warp::post()
+            .and(warp::path("api"))
+            .and(warp::path(const_str::convert_ascii_case!(
+                snake,
+                stringify!($func_name)
+            )))
+            $(.and(warp::path::param::<$ty>()))*
+            .and(warp::path::end())
+            .and(warp::body::content_length_limit(1024 * 16))
+            .and(warp::body::json())
+            .map($func_name)
+    }};
+    (WS async fn $func_name:ident $($ty:ty)*;) => {{
+        warp::path("api")
+            .and(warp::path(const_str::convert_ascii_case!(
+                snake,
+                stringify!($func_name)
+            )))
+            $(.and(warp::path::param::<$ty>()))*
+            .and(warp::path::end())
+            .and(warp::ws())
+            .and_then($func_name)
+    }};
+    (WS fn $func_name:ident $($ty:ty)*;) => {{
+        warp::path("api")
+            .and(warp::path(const_str::convert_ascii_case!(
+                snake,
+                stringify!($func_name)
+            )))
+            $(.and(warp::path::param::<$ty>()))*
+            .and(warp::path::end())
+            .and(warp::ws())
+            .map($func_name)
+    }};
+    ($verb:ident async fn $func_name:ident $($ty:ty)*; $($tail:tt)+) => {
+        filters!($verb async fn $func_name $($ty)*;).or(filters!($($tail)+))
+    };
+    ($verb:ident fn $func_name:ident $($ty:ty)*; $($tail:tt)+) => {
+        filters!($verb fn $func_name $($ty)*;).or(filters!($($tail)+))
     };
 }
 
@@ -42,136 +86,77 @@ macro_rules! catch {
 pub(crate) use catch;
 pub(crate) use filters;
 
-use crate::state::SaveError;
-use warp::reply::Response;
+use warp::{reply::Response, Reply, hyper::StatusCode};
 
-/// implements warp::Reply if T also implements warp::Reply
-pub enum WarpResult<T> {
-    Reply(T),
-    Status(warp::http::StatusCode),
-    SaveError(SaveError),
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum SaveError {
+    BadRequest,
+    NotFound,
+    AlreadyExists,
+    VersionNotFound,
+    InvalidProperty,
+    IsOnline,
+    IsOffline,
+    IsLoading,
+    IsShutdown,
+    PortInUse,
+    IOError,
 }
 
-impl<T> WarpResult<T> {
-    pub const BAD_REQUEST: Self = WarpResult::Status(warp::http::StatusCode::BAD_REQUEST);
-    pub const INTERNAL_SERVER_ERROR: Self =
-        WarpResult::Status(warp::http::StatusCode::INTERNAL_SERVER_ERROR);
+/// implements warp::Reply
+pub enum WarpResult<T: Reply> {
+    Ok(T),
+    Err(SaveError),
 }
 
-impl<T> warp::Reply for WarpResult<T>
-where
-    T: warp::Reply,
+impl<T: Reply> Reply for WarpResult<T>
 {
-    fn into_response(self) -> warp::reply::Response {
-        #[derive(serde::Serialize)]
-        struct SaveErrorJson {
-            err: &'static str,
-            desc: &'static str,
-        }
-        const NOTFOUND: SaveErrorJson = SaveErrorJson {
-            err: "NotFound",
-            desc: "O save não foi encontrado",
-        };
-        const ALREADYEXISTS: SaveErrorJson = SaveErrorJson {
-            err: "AlreadyExists",
-            desc: "O nome já é usado por um save",
-        };
-        const VERSIONNOTFOUND: SaveErrorJson = SaveErrorJson {
-            err: "VersionNotFound",
-            desc: "A versão não existe, ou não está instalada",
-        };
-        const INVALIDPROPERTY: SaveErrorJson = SaveErrorJson {
-            err: "InvalidProperty",
-            desc: "Essa propiedade não existe ou o valor usado não é válido",
-        };
-        const ISONLINE: SaveErrorJson = SaveErrorJson {
-            err: "IsOnline",
-            desc: "O save esta ligado",
-        };
-        const ISOFFLINE: SaveErrorJson = SaveErrorJson {
-            err: "IsOffline",
-            desc: "O save esta desligado",
-        };
-        const PORTINUSE: SaveErrorJson = SaveErrorJson {
-            err: "PortInUse",
-            desc: "A porta já esta sendo usada por outro save",
-        };
-        const ISLOADING: SaveErrorJson = SaveErrorJson {
-            err: "IsLoading",
-            desc: "O save esta ligando",
-        };
-        const IOERROR: SaveErrorJson = SaveErrorJson {
-            err: "IOError",
-            desc: "Ocorreu um erro ao operar os arquivos",
-        };
+    fn into_response(self) -> Response {
         match self {
-            WarpResult::Reply(reply) => reply.into_response(),
-            WarpResult::Status(status) => status.into_response(),
-            WarpResult::SaveError(error) => match error {
-                SaveError::NotFound => warp::reply::with_status(
-                    warp::reply::json(&NOTFOUND),
-                    warp::http::StatusCode::BAD_REQUEST,
-                )
-                .into_response(),
-                SaveError::AlreadyExists => warp::reply::with_status(
-                    warp::reply::json(&ALREADYEXISTS),
-                    warp::http::StatusCode::BAD_REQUEST,
-                )
-                .into_response(),
-                SaveError::VersionNotFound => warp::reply::with_status(
-                    warp::reply::json(&VERSIONNOTFOUND),
-                    warp::http::StatusCode::BAD_REQUEST,
-                )
-                .into_response(),
-                SaveError::InvalidProperty => warp::reply::with_status(
-                    warp::reply::json(&INVALIDPROPERTY),
-                    warp::http::StatusCode::BAD_REQUEST,
-                )
-                .into_response(),
-                SaveError::IOError => warp::reply::with_status(
-                    warp::reply::json(&IOERROR),
-                    warp::http::StatusCode::INTERNAL_SERVER_ERROR,
-                )
-                .into_response(),
-                SaveError::IsOnline => warp::reply::with_status(
-                    warp::reply::json(&ISONLINE),
-                    warp::http::StatusCode::BAD_REQUEST,
-                )
-                .into_response(),
-                SaveError::IsOffline => warp::reply::with_status(
-                    warp::reply::json(&ISOFFLINE),
-                    warp::http::StatusCode::BAD_REQUEST,
-                )
-                .into_response(),
-                SaveError::PortInUse => warp::reply::with_status(
-                    warp::reply::json(&PORTINUSE),
-                    warp::http::StatusCode::BAD_REQUEST,
-                )
-                .into_response(),
-                SaveError::IsLoading => warp::reply::with_status(
-                    warp::reply::json(&ISLOADING),
-                    warp::http::StatusCode::BAD_REQUEST,
-                )
-                .into_response(),
-            },
+            WarpResult::Ok(reply) => reply.into_response(),
+            WarpResult::Err(error) => error.into_response(),
         }
     }
 }
 
-impl<T> From<Result<T, warp::http::StatusCode>> for WarpResult<T> {
-    fn from(value: Result<T, warp::http::StatusCode>) -> Self {
+impl Reply for SaveError
+{
+    fn into_response(self) -> Response {
+        let body = match self {
+            Self::BadRequest => return StatusCode::BAD_REQUEST.into_response(),
+            Self::NotFound => r#"{"err":"NotFound","desc":"O save não foi encontrado"}"#,
+            Self::AlreadyExists => r#"{"err":"AlreadyExists","desc":"O nome já é usado por um save"}"#,
+            Self::VersionNotFound => r#"{"err":"VersionNotFound","desc":"A versão não existe, ou não está instalada"}"#,
+            Self::InvalidProperty => r#"{"err":"InvalidProperty","desc":"Essa propiedade não existe ou o valor usado não é válido"}"#,
+            Self::IsOnline => r#"{"err":"IsOnline","desc":"O save esta ligado"}"#,
+            Self::IsOffline => r#"{"err":"IsOffline","desc":"O save esta desligado"}"#,
+            Self::IsLoading => r#"{"err":"IsLoading","desc":"O save esta ligando"}"#,
+            Self::IsShutdown => r#"{"err":"IsShutdown","desc":"O save esta desligando"}"#,
+            Self::PortInUse => r#"{"err":"PortInUse","desc":"A porta já esta sendo usada por outro save"}"#,
+            Self::IOError => r#"{"err":"IOError","desc":"Ocorreu um erro ao operar os arquivos"}"#,
+        };
+        let status = match self {
+            Self::IOError => StatusCode::INTERNAL_SERVER_ERROR,
+            _ => StatusCode::BAD_REQUEST,
+        };
+        json_response_with_status(body.to_owned(), status)
+    }
+}
+
+impl From<Result<(), SaveError>> for WarpResult<Response> {
+    fn from(value: Result<(), SaveError>) -> Self {
         match value {
-            Ok(value) => WarpResult::Reply(value),
-            Err(status) => WarpResult::Status(status),
+            Ok(()) => WarpResult::Ok(warp::reply().into_response()),
+            Err(error) => WarpResult::Err(error),
         }
     }
 }
 
-impl<T> From<Result<T, SaveError>> for WarpResult<T> {
+impl<T: Reply> From<Result<T, SaveError>> for WarpResult<T> {
     fn from(value: Result<T, SaveError>) -> Self {
         match value {
-            Ok(value) => WarpResult::Reply(value),
-            Err(error) => WarpResult::SaveError(error),
+            Ok(value) => WarpResult::Ok(value),
+            Err(error) => WarpResult::Err(error),
         }
     }
 }
@@ -180,6 +165,17 @@ impl<T> From<Result<T, SaveError>> for WarpResult<T> {
 pub fn json_response(body: String) -> Response {
     use warp::http::header::CONTENT_TYPE;
     let (mut parts, body) = Response::new(body.into()).into_parts();
+    parts
+        .headers
+        .append(CONTENT_TYPE, "application/json".parse().unwrap());
+    Response::from_parts(parts, body)
+}
+
+/// creates a json reponse from raw body with the appropiate content-type
+fn json_response_with_status(body: String, status: warp::http::StatusCode) -> Response {
+    use warp::http::header::CONTENT_TYPE;
+    let (mut parts, body) = Response::new(body.into()).into_parts();
+    parts.status =status;
     parts
         .headers
         .append(CONTENT_TYPE, "application/json".parse().unwrap());

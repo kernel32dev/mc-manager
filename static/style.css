@@ -371,8 +371,26 @@ button:active span {
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    margin: 0 auto;
+    margin: 0 30px;
     height: 100%;
+}
+
+/* console-screen styles */
+
+#console-screen {
+    width: calc(100vw - 60px);
+    height: calc(100vh - 60px);
+    padding: 30px;
+    display: flex;
+    flex-direction: column;
+}
+
+#console-output {
+    flex-grow: 1;
+    flex-shrink: 1;
+    overflow-x: hidden;
+    overflow-y: scroll;
+    font-size: 12px;
 }
 
 /* useful classes */
@@ -401,4 +419,16 @@ button:active span {
 
 .wide {
     width: 100%;
+}
+
+::-webkit-scrollbar {
+    width: 15px;
+}
+
+::-webkit-scrollbar-track {
+    background: #555;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #CCC;
 }
