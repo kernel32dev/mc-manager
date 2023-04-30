@@ -52,8 +52,8 @@ fn main() -> Result<(), windows_service::Error> {
 define_windows_service!(ffi_service_main, rust_service_main);
 
 fn rust_service_main(arguments: Vec<OsString>) {
-    if let Err(_e) = run_service(arguments) {
-        // Handle error in some way.
+    if let Err(e) = run_service(arguments) {
+        println!("{:#?}", e);
     }
 }
 
@@ -190,31 +190,63 @@ fn uninstall_service() {
 
 fn start_service() {
     use std::ffi::OsStr;
-    if let Some(service) = open_service(ServiceAccess::START) {
-        service.start::<&OsStr>(&[]).expect("start");
-        println!("O serviço está iniciando");
-    }
+    let Some(service) = open_service(ServiceAccess::START) else { return };
+    service.start::<&OsStr>(&[]).expect("start");
+    println!("O serviço está iniciando");
 }
 
 fn stop_service() {
-    if let Some(service) = open_service(ServiceAccess::STOP) {
-        service.stop().expect("stop");
-        println!("O serviço está parando");
+    let Some(service) = open_service(ServiceAccess::STOP | ServiceAccess::QUERY_STATUS) else { return };
+    service.stop().expect("stop");
+
+    let start = Instant::now();
+    let timeout = Duration::from_secs(5);
+    while start.elapsed() < timeout {
+        match service.query_status() {
+            Ok(status) => {
+                match status.current_state {
+                    ServiceState::Stopped => {
+                        println!("O serviço está parado");
+                        return;
+                    }
+                    ServiceState::StopPending | ServiceState::Running => {
+                        sleep(Duration::from_secs(1));
+                    }
+                    ServiceState::StartPending => {
+                        println!("Ocorreu um erro ao parar o serviço\r\nO serviço está iniciando");
+                        return;
+                    }
+                    ServiceState::ContinuePending => {
+                        println!("Ocorreu um erro ao parar o serviço\r\nO serviço está despausando");
+                        return;
+                    }
+                    ServiceState::PausePending => {
+                        println!("Ocorreu um erro ao parar o serviço\r\nO serviço está pausando");
+                        return;
+                    }
+                    ServiceState::Paused => {
+                        println!("Ocorreu um erro ao parar o serviço\r\nO serviço está pausado");
+                        return;
+                    }
+                }
+            }
+            Err(_) => break,
+        }
     }
+    println!("O serviço está parando");
 }
 
 fn status_service() {
-    if let Some(service) = open_service(ServiceAccess::QUERY_STATUS) {
-        let status = service.query_status().expect("query_status").current_state;
-        match status {
-            ServiceState::Stopped => println!("O serviço está parado"),
-            ServiceState::StartPending => println!("O serviço está iniciando"),
-            ServiceState::StopPending => println!("O serviço está parando"),
-            ServiceState::Running => println!("O serviço está executando"),
-            ServiceState::ContinuePending => println!("O serviço está despausando"),
-            ServiceState::PausePending => println!("O serviço está pausando"),
-            ServiceState::Paused => println!("O serviço está pausado"),
-        }
+    let Some(service) = open_service(ServiceAccess::QUERY_STATUS) else { return };
+    let status = service.query_status().expect("query_status").current_state;
+    match status {
+        ServiceState::Stopped => println!("O serviço está parado"),
+        ServiceState::StartPending => println!("O serviço está iniciando"),
+        ServiceState::StopPending => println!("O serviço está parando"),
+        ServiceState::Running => println!("O serviço está executando"),
+        ServiceState::ContinuePending => println!("O serviço está despausando"),
+        ServiceState::PausePending => println!("O serviço está pausando"),
+        ServiceState::Paused => println!("O serviço está pausado"),
     }
 }
 
