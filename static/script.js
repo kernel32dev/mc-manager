@@ -137,7 +137,7 @@ function create_save(save) {
     save_data.append(save_line_1);
     save_data.append(save_line_2);
     save_data.append(save_line_3);
-    img.setAttribute("src","/api/icons/" + name);
+    img.setAttribute("src","/api/icons/" + encodeURI(name));
     save_div.dataset.name = name;
     save_div.classList.add("save", save.status);
     tr.classList.toggle("hide", !search_matches(name))
@@ -224,7 +224,7 @@ function show_screen(screen, within_popstate_handler) {
     } else if (screen === "console-screen") {
         document.getElementById("console-input").focus();
         let output = document.getElementById("console-output");
-        let name = selected;
+        let name_encoded = encodeURI(selected);
         let cursor = 0;
         let api_console = `ws://${window.location.hostname}:${window.location.port}/api/console`;
         clear_elem(output);
@@ -232,7 +232,7 @@ function show_screen(screen, within_popstate_handler) {
             ws.close();
             setTimeout(function() {
                 if (ws === null) return;
-                ws = new WebSocket(`${api_console}/${cursor}/${name}`);
+                ws = new WebSocket(`${api_console}/${cursor}/${name_encoded}`);
                 ws.onerror = onerror;
                 ws.onmessage = onmessage;
             }, 3000);
@@ -249,7 +249,7 @@ function show_screen(screen, within_popstate_handler) {
                 console.log("message", text);
             }).catch(console.error);
         }
-        ws = new WebSocket(`${api_console}/0/${name}`);
+        ws = new WebSocket(`${api_console}/0/${name_encoded}`);
         ws.onerror = onerror;
         ws.onmessage = onmessage;
     }
