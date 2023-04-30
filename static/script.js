@@ -288,7 +288,7 @@ function update_status(status) {
     });
 }
 
-async function main() {
+function main() {
 
     // add sound to all buttons
 
@@ -524,7 +524,33 @@ async function main() {
 
     // setup status update
 
+    let status_ping_delay = 0;
+
     setInterval(function() {
+        if (current_screen !== "saves-screen") {
+            return;
+        }
+        function some_loading_shutdown() {
+            let saves_list = Object.values(saves);
+            for (let i = 0; i < saves_list.length; i++) {
+                if (saves_list[i].status === "loading" || saves_list[i].status === "shutdown") {
+                    return true;
+                }
+            }
+            return false;
+        }
+        if (!some_loading_shutdown()) {
+            // if none is either loading or shutting down, only check for updates every 5-9 seconds instead of one
+            if (status_ping_delay > 0) {
+                status_ping_delay -= 1;
+                return;
+            }
+            // time to check status again, reset delay
+            status_ping_delay = 5 + Math.floor(Math.random() * 5);
+        } else {
+            // some one is either loading or shuting down, check every second for updates
+            status_ping_delay = 0;
+        }
         api_fetch_status().then(update_status).catch(console.error);
     }, 1000);
 }
