@@ -37,6 +37,13 @@
     box-shadow: black 0px 7px 10px 0px;
 }
 
+.middle-bar-0 {
+    width: 100%;
+    padding-top: 10px;
+    padding-bottom: calc(10px);
+    min-height: calc(100vh - 10px - 10px - 65px);
+}
+
 .middle-bar-1 {
     width: 100%;
     padding-top: 10px;
@@ -51,6 +58,22 @@
     /* padding-bottom = height of .bottom-bar4x2 with 2 rows of buttons + 10px */
     padding-bottom: calc(160px + 10px);
     min-height: calc(100vh - 10px - 170px - 10px - 86px);
+}
+
+.bottom-bar-1x1 {
+    box-shadow: black 0px -7px 10px 0px;
+    padding: 30px;
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr;
+    row-gap: 10px;
+    column-gap: 20px;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: calc(100% - 60px);
+    z-index: 100;
+    background-position: right 10px bottom 10px;
 }
 
 .bottom-bar-2x1 {
@@ -391,6 +414,30 @@ button:active span {
     overflow-x: hidden;
     overflow-y: scroll;
     font-size: 12px;
+}
+
+/* version-screen styles */
+
+#version-screen-title {
+    display: block;
+    text-align: center;
+    width: 100%;
+    margin-top: 1em;
+    margin-bottom: 25px;
+}
+
+#version-area {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    width: 500px;
+    margin: 0 auto;
+}
+
+button.version {
+    margin: 10px 0;
 }
 
 /* useful classes */

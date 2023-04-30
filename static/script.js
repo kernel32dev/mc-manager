@@ -15,6 +15,8 @@ let saves = {};
 let saves_elem = {};
 let selected = null;
 
+let show_version_screen_callback = null;
+
 let ws = null;
 
 // API FUNCTIONS //
@@ -183,9 +185,12 @@ function delete_save(name) {
 }
 
 function show_screen(screen, within_popstate_handler) {
-    const SCREENS = ["saves-screen", "create-screen", "modify-screen", "delete-screen", "console-screen"];
+    const SCREENS = ["saves-screen", "create-screen", "modify-screen", "delete-screen", "console-screen", "version-screen"];
     if (current_screen === screen) {
         return;
+    }
+    if (screen !== "version-screen") {
+        show_version_screen_callback = null;
     }
     if (current_screen === "saves-screen" && within_popstate_handler === undefined) {
         history.pushState({screen}, "", undefined);
@@ -247,6 +252,11 @@ function show_screen(screen, within_popstate_handler) {
         ws.onerror = onerror;
         ws.onmessage = onmessage;
     }
+}
+
+function show_version_screen(callback) {
+    show_version_screen_callback = callback;
+    show_screen("version-screen");
 }
 
 function update_filter() {
@@ -368,7 +378,13 @@ async function main() {
     // initialize create-screen buttons
 
     document.getElementById("create-input-search-version").addEventListener("click", function() {
-        alert("TODO: create version-screen");
+        let version_elem = document.getElementById("create-param-version");
+        show_version_screen(function(version) {
+            if (version !== null) {
+                version_elem.value = version;
+            }
+            show_screen("create-screen");
+        });
     });
     document.getElementById("create-button-confirm").addEventListener("click", function() {
         let name_elem = document.getElementById("create-param-name");
@@ -437,6 +453,14 @@ async function main() {
         }
     });
 
+    document.getElementById("version-button-cancel").addEventListener("click", function() {
+        if (typeof show_version_screen_callback === "function") {
+            let callback = show_version_screen_callback;
+            show_version_screen_callback = null;
+            callback(null);
+        }
+    });
+
     // initialize create-screen and modify-screen input fields
 
     let future_saves = api_fetch_saves();
@@ -478,7 +502,22 @@ async function main() {
         // versions were loaded, create versions-screen
         future_versions.then(function(response) {
             console.log(response);
-            alert("TODO: create version-screen");
+            let area = document.getElementById("version-area");
+            foreach(response, function(version) {
+                let elem = document.createElement("button");
+                let span = document.createElement("span");
+                elem.append(span);
+                elem.classList.add("version", "wide");
+                span.innerText = version;
+                area.append(elem);
+                elem.addEventListener("click", function() {
+                    if (typeof show_version_screen_callback === "function") {
+                        let callback = show_version_screen_callback;
+                        show_version_screen_callback = null;
+                        callback(version);
+                    }
+                });
+            });
         }).catch(console.error);
     }).catch(console.error);
 
