@@ -1,14 +1,14 @@
 use crate::properties::read_property;
+use crate::server::is_shutdown;
 use crate::state::save;
 use crate::utils::{append_comma_separated, append_json_string, SaveError};
-use crate::server::is_shutdown;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
-use tokio::io::{AsyncWriteExt, BufReader, AsyncBufReadExt};
-use tokio::process::{ChildStdin, Command};
 use std::process::Stdio;
-use tokio::sync::{Mutex, RwLock, watch};
 use std::sync::Arc;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::process::{ChildStdin, Command};
+use tokio::sync::{watch, Mutex, RwLock};
 
 lazy_static! {
     static ref INSTANCES: RwLock<HashMap<String, Instance>> = RwLock::new(HashMap::new());
@@ -69,7 +69,8 @@ impl InstanceVector {
         self.sender.send_modify(|(_, alive)| *alive = false);
     }
     async fn write(&self, data: &[u8]) {
-        self.sender.send_modify(|(buffer, _)| buffer.extend_from_slice(data));
+        self.sender
+            .send_modify(|(buffer, _)| buffer.extend_from_slice(data));
     }
     pub fn subscribe(&self) -> watch::Receiver<(Vec<u8>, bool)> {
         self.sender.subscribe()
@@ -101,13 +102,16 @@ pub async fn start_instance(name: &str) -> Result<(), SaveError> {
         directory = &directory[4..];
     }
     save::access(name)?;
-    let mut child = Command::new("java.exe")
+    let mut child = match Command::new("java.exe")
         .args(["-jar", "server.jar", "nogui"])
         .current_dir(directory)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
-        .expect("failed to spawn java.exe");
+    {
+        Ok(child) => child,
+        Err(_) => return Err(SaveError::IOError),
+    };
     println!("[{name}] Java process spawned");
     let stdin = Arc::new(Mutex::new(child.stdin.take().unwrap()));
     let stdout = BufReader::new(child.stdout.take().unwrap());
@@ -137,7 +141,9 @@ pub async fn start_instance(name: &str) -> Result<(), SaveError> {
             }
         }
         if save::access(name.as_str()).is_err() {
-            println!("[!] An error occoured when attempting to set the access time of save \"{name}\"")
+            println!(
+                "[!] An error occoured when attempting to set the access time of save \"{name}\""
+            )
         }
         let mut instances = INSTANCES.write().await;
         instances
@@ -247,7 +253,14 @@ pub async fn write_instance(name: &str, command: &str) -> Result<(), SaveError> 
     if let Some(instance) = instances.get(name) {
         if instance.status != InstanceStatus::Online {
             Err(instance.status.to_error())
-        } else if instance.stdin.lock().await.write(out.as_bytes()).await.is_ok() {
+        } else if instance
+            .stdin
+            .lock()
+            .await
+            .write(out.as_bytes())
+            .await
+            .is_ok()
+        {
             Ok(())
         } else {
             Err(SaveError::IOError)
@@ -291,8 +304,12 @@ pub async fn stop_all_instances() {
 }
 
 fn bytes_contains(haystack: &[u8], needle: &[u8]) -> bool {
-    if haystack.len() < needle.len() { return false; }
-    if needle.is_empty() { return true; }
+    if haystack.len() < needle.len() {
+        return false;
+    }
+    if needle.is_empty() {
+        return true;
+    }
     for index in 0..=(haystack.len() - needle.len()) {
         if &haystack[index..index + needle.len()] == needle {
             return true;
