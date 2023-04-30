@@ -226,12 +226,13 @@ function show_screen(screen, within_popstate_handler) {
         let output = document.getElementById("console-output");
         let name = selected;
         let cursor = 0;
+        let api_console = `ws://${window.location.hostname}:${window.location.port}/api/console`;
         clear_elem(output);
         function onerror(error) {
             ws.close();
-            ws = null;
             setTimeout(function() {
-                ws = new WebSocket("ws://localhost:1234/api/console/" + cursor + "/" + name);
+                if (ws === null) return;
+                ws = new WebSocket(`${api_console}/${cursor}/${name}`);
                 ws.onerror = onerror;
                 ws.onmessage = onmessage;
             }, 3000);
@@ -248,7 +249,7 @@ function show_screen(screen, within_popstate_handler) {
                 console.log("message", text);
             }).catch(console.error);
         }
-        ws = new WebSocket("ws://localhost:1234/api/console/0/" + name);
+        ws = new WebSocket(`${api_console}/0/${name}`);
         ws.onerror = onerror;
         ws.onmessage = onmessage;
     }
