@@ -38,13 +38,10 @@ pub fn serve(shutdown: Option<tokio::sync::oneshot::Receiver<()>>) {
     );
 
     #[cfg(not(debug_assertions))] // cd into folder of executable
-    std::env::set_current_dir(std::env::current_exe().expect("current_exe").parent().unwrap()).expect("set_current_dir");
+    std::env::set_current_dir(std::env::current_exe().expect("current_exe").parent().expect("parent")).expect("set_current_dir");
 
     #[cfg(not(debug_assertions))] // load assets from executable
     let routes = apis.or(static_dir::static_dir!("static"));
-
-    #[cfg(debug_assertions)] // cd into folder of project (leave target/debug/)
-    std::env::set_current_dir(std::env::current_exe().expect("current_exe").parent().unwrap().parent().unwrap().parent().unwrap()).expect("set_current_dir");
 
     #[cfg(debug_assertions)] // load assets from static directory
     let routes = apis.or(warp::fs::dir("static"));
@@ -101,7 +98,7 @@ pub fn serve(shutdown: Option<tokio::sync::oneshot::Receiver<()>>) {
     let rt = tokio::runtime::Builder::new_multi_thread()
     .enable_all()
     .build()
-    .unwrap();
+    .expect("failed to build runtime");
 
     let (ip, port) = {
         let ip = config.get("ip");

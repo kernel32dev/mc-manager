@@ -112,9 +112,10 @@ pub async fn saves() -> Result<WarpResult<Response>, Infallible> {
 }
 
 pub fn icons(save: String) -> WarpResult<warp::reply::WithHeader<Vec<u8>>> {
-    if !is_safe(&save) {
-        return WarpResult::Err(SaveError::BadRequest);
-    }
+    let save = match parse_name(save) {
+        Some(save) => save,
+        None => return WarpResult::Err(SaveError::BadRequest),
+    };
     const UNKNOWN_PNG: &[u8] = include_bytes!("../static/assets/unknown.png");
     let data = match std::fs::read(format!("saves/{save}/world/icon.png")) {
         Ok(data) => data,
@@ -142,15 +143,26 @@ pub struct Command {
 }
 
 pub async fn command(body: Command) -> Result<WarpResult<Response>, Infallible> {
-    //use futures::FutureExt;
     Ok(write_instance(&body.name, &body.command).await.into())
 }
 
 pub async fn console(mut offset: usize, save: String, ws: warp::ws::Ws) -> Result<WarpResult<impl Reply>, Infallible> {
-    //use futures::FutureExt;
+    #[cfg(debug_assertions)]
+    const DEBUG_WEB_SOCKET: bool = true;
+    #[cfg(not(debug_assertions))]
+    const DEBUG_WEB_SOCKET: bool = false;
+    let save = match parse_name(save) {
+        Some(save) => save,
+        None => return Ok(WarpResult::Err(SaveError::BadRequest)),
+    };
+    if DEBUG_WEB_SOCKET {
+        println!("[*] Websocket: reading console of {}", &save);
+    }
     match read_instance(&save).await {
         Ok(vector) => Ok(WarpResult::Ok(ws.on_upgrade(move |mut ws| async move {
-            println!("[*] Websocket stream spawned");
+            if DEBUG_WEB_SOCKET {
+                println!("[*] Websocket stream spawned");
+            }
             use futures::SinkExt;
             let mut subscription = vector.subscribe();
             while !is_shutdown() {
@@ -160,7 +172,9 @@ pub async fn console(mut offset: usize, save: String, ws: warp::ws::Ws) -> Resul
                     let alive = &borrow.1;
                     if offset >= data.len() {
                         if !*alive {
-                            println!("[*] Websocket stream finished");
+                            if DEBUG_WEB_SOCKET {
+                                println!("[*] Websocket stream finished");
+                            }
                             break;
                         }
                         None
@@ -170,20 +184,68 @@ pub async fn console(mut offset: usize, save: String, ws: warp::ws::Ws) -> Resul
                 };
                 if let Some((payload, new_offset)) = pair {
                     if ws.send(warp::ws::Message::binary(payload)).await.is_err() {
-                        println!("[*] Websocket stream finished, due to error");
+                        if DEBUG_WEB_SOCKET {
+                            println!("[*] Websocket stream finished, due to error");
+                        }
                         break;
                     }
-                    println!("[*] Websocket sent {} bytes", new_offset - offset);
+                    if DEBUG_WEB_SOCKET {
+                        println!("[*] Websocket sent {} bytes", new_offset - offset);
+                    }
                     offset = new_offset;
                 }
                 if subscription.changed().await.is_err() {
-                    println!("[*] Websocket stream finished, because sender half was dropped");
+                    if DEBUG_WEB_SOCKET {
+                        println!("[*] Websocket stream finished, because sender half was dropped");
+                    }
                     break;
                 }
             }
             let _ = ws.close().await;
         }))),
         Err(error) => Ok(WarpResult::Err(error)),
+    }
+}
+
+fn parse_name(name: String) -> Option<String> {
+    fn from_hex_byte(char: u8) -> Option<u8> {
+        match char {
+            b'a'..=b'f' => Some(char - b'a' + 10),
+            b'A'..=b'F' => Some(char - b'A' + 10),
+            b'0'..=b'9' => Some(char - b'0'),
+            _ => None,
+        }
+    }
+    let mut out = Vec::new();
+    if name.contains('%') {
+        let mut iter = name.bytes();
+        while let Some(byte) = iter.next() {
+            match byte {
+                b'%' => {
+                    let upper = iter.next()?;
+                    let lower = iter.next()?;
+                    let byte = (from_hex_byte(upper)? * 0x10) | from_hex_byte(lower)?;
+                    if byte >= 0x80 {
+                        return None;
+                    }
+                    out.push(byte);
+                },
+                0x00..=0x7F => out.push(byte),
+                0x80..=0xFF => return None,
+            }
+        }
+        let name = std::str::from_utf8(&out).ok()?;
+        if is_safe(name) {
+            Some(name.to_owned())
+        } else {
+            None
+        }
+    } else {
+        if is_safe(&name) {
+            Some(name)
+        } else {
+            None
+        }
     }
 }
 
