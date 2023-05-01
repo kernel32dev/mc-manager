@@ -152,19 +152,7 @@ function create_save(save) {
         select_save(name);
     });
     save_div.addEventListener('dblclick', function() {
-        if (save_div.classList.contains("offline")) {
-            api_start_save(name).then(function(response) {
-                save_div.classList.remove("offline");
-                save_div.classList.add("loading");
-                select_save(selected);
-            }).catch(console.error);
-        } else {
-            api_stop_save(name).then(function(response) {
-                save_div.classList.remove("loading", "online");
-                save_div.classList.add("shutdown");
-                select_save(selected);
-            }).catch(console.error);
-        }
+        start_stop_save(name);
     });
     saves[name] = save;
     saves_elem[name] = save_div;
@@ -335,21 +323,7 @@ function main() {
     document.getElementById("saves-search").addEventListener("input", update_filter);
     document.getElementById("saves-button-play").addEventListener("click", function() {
         if (selected !== null) {
-            let name = selected;
-            let save_div = saves_elem[selected];
-            if (save_div.classList.contains("offline")) {
-                api_start_save(name).then(function(response) {
-                    save_div.classList.remove("offline");
-                    save_div.classList.add("loading");
-                    if (name === selected) select_save(selected);
-                }).catch(console.error);
-            } else if (save_div.classList.contains("online")) {
-                api_stop_save(name).then(function(response) {
-                    save_div.classList.remove("online");
-                    save_div.classList.add("shutdown");
-                    if (name === selected) select_save(selected);
-                }).catch(console.error);
-            }
+            start_stop_save(selected);
         }
     });
     document.getElementById("saves-button-create").addEventListener("click", function() {
@@ -556,6 +530,26 @@ function main() {
 }
 
 // HELPER FUNCTIONS //
+
+function start_stop_save(name) {
+    let save = saves[name];
+    let save_div = saves_elem[name];
+    if (save.status === "offline") {
+        api_start_save(name).then(function(response) {
+            save_div.classList.remove("offline");
+            save_div.classList.add("loading");
+            save.status = "loading";
+            if (name === selected) select_save(selected);
+        }).catch(console.error);
+    } else if (save_div.classList.contains("online")) {
+        api_stop_save(name).then(function(response) {
+            save_div.classList.remove("online");
+            save_div.classList.add("shutdown");
+            save.status = "shutdown";
+            if (name === selected) select_save(selected);
+        }).catch(console.error);
+    }
+}
 
 // this function is responsible for updating the buttons when a save is selected
 // if the selected buttons changes status select_save(selected) should be called to update the buttons
