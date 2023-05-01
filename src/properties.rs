@@ -1,7 +1,6 @@
-
-use std::{collections::HashMap, path::Path};
+use crate::utils::{now, ApiError};
 use serde::Deserialize;
-use crate::utils::{SaveError, now};
+use std::{collections::HashMap, path::Path};
 
 /// defines a property completely
 pub struct PropDef {
@@ -506,7 +505,7 @@ pub const PROPERTIES: &[PropDef] = &[
 ];
 
 /// reads all the properties
-pub fn read_properties(path: impl AsRef<Path>) -> Result<HashMap<String, String>, SaveError> {
+pub fn read_properties(path: impl AsRef<Path>) -> Result<HashMap<String, String>, ApiError> {
     use std::fs::File;
     use std::io::{BufRead, BufReader};
     let mut out = HashMap::new();
@@ -526,7 +525,7 @@ pub fn read_properties(path: impl AsRef<Path>) -> Result<HashMap<String, String>
 }
 
 /// reads one property, returns Ok(None) if not found
-pub fn read_property(path: impl AsRef<Path>, name: &str) -> Result<Option<String>, SaveError> {
+pub fn read_property(path: impl AsRef<Path>, name: &str) -> Result<Option<String>, ApiError> {
     use std::fs::File;
     use std::io::{BufRead, BufReader};
 
@@ -550,7 +549,7 @@ pub fn read_property(path: impl AsRef<Path>, name: &str) -> Result<Option<String
 pub fn write_properties(
     path: impl AsRef<Path> + Clone,
     mut values: HashMap<String, PropValue>,
-) -> Result<(), SaveError> {
+) -> Result<(), ApiError> {
     use std::fs::File;
     use std::io::{BufRead, BufReader};
 
@@ -588,16 +587,12 @@ pub fn write_properties(
     Ok(())
 }
 
-pub fn validate_properties(
-    values: &HashMap<String, PropValue>,
-    access_needed: PropAccess,
-) -> Result<(), SaveError> {
+/// validates that the client can write to these properties, returns first error, if any
+pub fn validate_properties(values: &HashMap<String, PropValue>) -> Result<(), ApiError> {
     for (key, value) in values.iter() {
         if let Some(prop) = PROPERTIES.iter().filter(|prop| prop.name == key).next() {
-            match (access_needed, prop.access) {
-                (_, PropAccess::Write)
-                | (PropAccess::None, _)
-                | (PropAccess::Read, PropAccess::Read) => match &prop.ty {
+            if prop.access == PropAccess::Write {
+                match &prop.ty {
                     PropType::Bool(_) => {
                         if let PropValue::Boolean(_) = value {
                             continue;
@@ -664,12 +659,14 @@ pub fn validate_properties(
                             }
                         }
                     }
-                },
-                _ => {}
+                }
+                return Err(ApiError::PropertyInvalid(key.to_owned()));
+            } else {
+                return Err(ApiError::PropertyReadOnly(key.to_owned()));
             }
+        } else {
+            return Err(ApiError::PropertyNotFound(key.to_owned()));
         }
-        println!("[!] Warning invalid property: {}", key);
-        return Err(SaveError::InvalidProperty);
     }
     Ok(())
 }
@@ -696,7 +693,9 @@ pub fn generate_properties(version: &str, values: &HashMap<String, PropValue>) -
                 PropType::Uint(value, _, _) => out += &value.to_string(),
                 PropType::Datetime => out += &now,
                 PropType::IntEnum(value, _) => out += &value.to_string(),
-                PropType::StrEnum(value, members) => append_prop_escaped(&mut out, (*members)[*value].0),
+                PropType::StrEnum(value, members) => {
+                    append_prop_escaped(&mut out, (*members)[*value].0)
+                }
             }
         }
         out += "\r\n";

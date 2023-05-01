@@ -1,42 +1,36 @@
 
 use crate::properties::*;
 use crate::instances::InstanceStatus;
-use crate::utils::{now, append_json_string, append_comma_separated};
+use crate::utils::{now, append_json_string, append_comma_separated, ApiError};
 use std::collections::HashMap;
-use std::io::ErrorKind;
 
 /// an iterator to list all saves in the saves folder
 ///
 /// instanciate with `Save::iter()`
 pub struct SaveIter(Option<std::fs::ReadDir>);
 
-use crate::utils::SaveError;
-
-impl From<std::io::Error> for SaveError {
-    fn from(error: std::io::Error) -> Self {
-        match error.kind() {
-            ErrorKind::AlreadyExists => Self::AlreadyExists,
-            ErrorKind::NotFound => Self::NotFound,
-            _ => Self::IOError,
-        }
-    }
-}
-
 pub mod save {
+    use std::io::ErrorKind;
+
     use super::*;
     /// creates the save with the version specified and returns the same as load would
     pub fn create(
         name: &str,
         version: &str,
         values: HashMap<String, PropValue>,
-    ) -> Result<String, SaveError> {
-        if !std::fs::metadata(format!("versions/{version}.jar")).is_ok() {
-            return Err(SaveError::VersionNotFound);
+    ) -> Result<String, ApiError> {
+        match exists(name) {
+            Err(ApiError::NotFound) => {}
+            Err(error) => return Err(error),
+            Ok(()) => return Err(ApiError::AlreadyExists),
         }
-        validate_properties(&values, PropAccess::Write)?;
+        if !std::fs::metadata(format!("versions/{version}.jar")).is_ok() {
+            return Err(ApiError::VersionNotFound);
+        }
+        validate_properties(&values)?;
         std::fs::create_dir(format!("saves/{name}"))?;
         let properties = generate_properties(version, &values);
-        if (|| {
+        if let Err(error) = (|| {
             // folder created successfully, move files into the folder
             std::fs::write(
                 format!("saves/{name}/eula.txt"),
@@ -49,23 +43,22 @@ pub mod save {
             )?;
             Ok::<(), std::io::Error>(())
         })()
-        .is_err()
         {
             std::fs::remove_dir_all(format!("saves/{name}"))?;
             // the creation failed
-            return Err(SaveError::IOError);
+            return Err(error.into());
         }
         load(name, InstanceStatus::Offline)
     }
     /// delete the save specified and all backups
-    pub fn delete(name: &str) -> Result<(), SaveError> {
+    pub fn delete(name: &str) -> Result<(), ApiError> {
         std::fs::remove_dir_all(format!("saves/{name}"))?;
         Ok(())
     }
     /// returns a valid json with all of the properties for a save, including its name, and its status
     ///
     /// you must query status yourself, this is so the functions stays sync
-    pub fn load(name: &str, status: InstanceStatus) -> Result<String, SaveError> {
+    pub fn load(name: &str, status: InstanceStatus) -> Result<String, ApiError> {
         exists(name)?;
         let properties = read_properties(format!("saves/{name}/server.properties"))?;
         let mut out = String::with_capacity(4096);
@@ -73,10 +66,11 @@ pub mod save {
         out += name;
         out += "\",\"status\":";
         match status {
-            InstanceStatus::Offline => out += "\"offline\"",
+            InstanceStatus::Cold => out += "\"cold\"",
             InstanceStatus::Loading => out += "\"loading\"",
             InstanceStatus::Online => out += "\"online\"",
             InstanceStatus::Shutdown => out += "\"shutdown\"",
+            InstanceStatus::Offline => out += "\"offline\"",
         }
         for prop in PROPERTIES.iter() {
             if prop.access == PropAccess::None {
@@ -105,13 +99,13 @@ pub mod save {
         Ok(out)
     }
     /// modifies one property of the save
-    pub fn modify(name: &str, values: HashMap<String, PropValue>) -> Result<(), SaveError> {
+    pub fn modify(name: &str, values: HashMap<String, PropValue>) -> Result<(), ApiError> {
         exists(name)?;
-        validate_properties(&values, PropAccess::Write)?;
+        validate_properties(&values)?;
         write_properties(format!("saves/{name}/server.properties"), values)
     }
     /// update the access time of the world specified to now
-    pub fn access(name: &str) -> Result<(), SaveError> {
+    pub fn access(name: &str) -> Result<(), ApiError> {
         let mut values = HashMap::new();
         values.insert(
             "mc-manager-access-time".to_owned(),
@@ -195,32 +189,27 @@ pub mod save {
         out
     }
     /// iterate over the names of all saves avaiable
-    pub fn iter() -> Result<SaveIter, SaveError> {
+    pub fn iter() -> Result<SaveIter, ApiError> {
         match std::fs::read_dir("saves") {
             Ok(paths) => Ok(SaveIter(Some(paths))),
-            Err(_) => Err(SaveError::IOError),
+            Err(error) => Err(error.into()),
         }
     }
-    /// returns an error if the save does not exist, may return IOError
-    pub fn exists(name: &str) -> Result<(), SaveError> {
+    /// returns the apropiate error if the save does not exist, may return IOError
+    pub fn exists(name: &str) -> Result<(), ApiError> {
         match std::fs::metadata(format!("saves/{name}")) {
             Ok(metadata) => {
                 if metadata.is_dir() {
                     Ok(())
                 } else {
-                    Err(SaveError::NotFound)
+                    Err(ApiError::NotFound)
                 }
             }
             Err(error) => {
-                const ERROR_FILE_NOT_FOUND: i32 = 2;
-                const ERROR_PATH_NOT_FOUND: i32 = 3;
-                if matches!(
-                    error.raw_os_error(),
-                    Some(ERROR_FILE_NOT_FOUND | ERROR_PATH_NOT_FOUND)
-                ) {
-                    Err(SaveError::NotFound)
+                if error.kind() == ErrorKind::NotFound {
+                    Err(ApiError::NotFound)
                 } else {
-                    Err(SaveError::IOError)
+                    Err(error.into())
                 }
             }
         }
@@ -228,7 +217,7 @@ pub mod save {
 }
 
 impl Iterator for SaveIter {
-    type Item = Result<String, SaveError>;
+    type Item = Result<String, ApiError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(iter) = &mut self.0 {
@@ -240,9 +229,9 @@ impl Iterator for SaveIter {
                         self.next()
                     }
                 }
-                Some(Err(_)) => {
+                Some(Err(error)) => {
                     self.0 = None;
-                    Some(Err(SaveError::IOError))
+                    Some(Err(error.into()))
                 }
                 None => {
                     self.0 = None;

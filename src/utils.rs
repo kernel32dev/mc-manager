@@ -77,36 +77,33 @@ macro_rules! filters {
     };
 }
 
-macro_rules! catch {
-    ($expr:expr) => {
-        (|| $expr)()
-    };
-}
-
-pub(crate) use catch;
 pub(crate) use filters;
 
 use warp::{reply::Response, Reply, hyper::StatusCode};
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum SaveError {
+use crate::instances::{InstanceStatus, get_java_path};
+
+#[derive(Clone, PartialEq, Eq)]
+pub enum ApiError {
     BadRequest,
+    BadName,
     NotFound,
     AlreadyExists,
     VersionNotFound,
-    InvalidProperty,
-    IsOnline,
-    IsOffline,
-    IsLoading,
-    IsShutdown,
+    PropertyNotFound(String),
+    PropertyReadOnly(String),
+    PropertyInvalid(String),
+    BadConfig(String),
+    BadInstanceStatus(InstanceStatus),
     PortInUse,
-    IOError,
+    JavaError(String),
+    IOError(String),
 }
 
 /// implements warp::Reply
 pub enum WarpResult<T: Reply> {
     Ok(T),
-    Err(SaveError),
+    Err(ApiError),
 }
 
 impl<T: Reply> Reply for WarpResult<T>
@@ -119,32 +116,78 @@ impl<T: Reply> Reply for WarpResult<T>
     }
 }
 
-impl Reply for SaveError
+impl Reply for ApiError
 {
     fn into_response(self) -> Response {
-        let body = match self {
-            Self::BadRequest => return StatusCode::BAD_REQUEST.into_response(),
-            Self::NotFound => r#"{"err":"NotFound","desc":"O save não foi encontrado"}"#,
-            Self::AlreadyExists => r#"{"err":"AlreadyExists","desc":"O nome já é usado por um save"}"#,
-            Self::VersionNotFound => r#"{"err":"VersionNotFound","desc":"A versão não existe, ou não está instalada"}"#,
-            Self::InvalidProperty => r#"{"err":"InvalidProperty","desc":"Essa propiedade não existe ou o valor usado não é válido"}"#,
-            Self::IsOnline => r#"{"err":"IsOnline","desc":"O save esta ligado"}"#,
-            Self::IsOffline => r#"{"err":"IsOffline","desc":"O save esta desligado"}"#,
-            Self::IsLoading => r#"{"err":"IsLoading","desc":"O save esta ligando"}"#,
-            Self::IsShutdown => r#"{"err":"IsShutdown","desc":"O save esta desligando"}"#,
-            Self::PortInUse => r#"{"err":"PortInUse","desc":"A porta já esta sendo usada por outro save"}"#,
-            Self::IOError => r#"{"err":"IOError","desc":"Ocorreu um erro ao operar os arquivos"}"#,
-        };
         let status = match self {
-            Self::IOError => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::IOError(_) | Self::JavaError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             _ => StatusCode::BAD_REQUEST,
         };
-        json_response_with_status(body.to_owned(), status)
+        let body = match self {
+            Self::BadRequest => return StatusCode::BAD_REQUEST.into_response(),
+            Self::BadName => r#"{"err":"BadName","desc":"Esse nome não pode ser usado como nome de um mundo"}"#.to_owned(),
+            Self::NotFound => r#"{"err":"NotFound","desc":"O save não foi encontrado"}"#.to_owned(),
+            Self::AlreadyExists => r#"{"err":"AlreadyExists","desc":"O nome já é usado por um save"}"#.to_owned(),
+            Self::VersionNotFound => r#"{"err":"VersionNotFound","desc":"A versão não existe, ou não está instalada"}"#.to_owned(),
+            Self::PropertyNotFound(prop) => {
+                let mut out = String::with_capacity(256);
+                out.push_str(r#"{"err":"PropertyNotFound","desc":"Essa propiedade não existe"},"prop":"#);
+                append_json_string(&mut out, &prop);
+                out.push('}');
+                out
+            },
+            Self::PropertyReadOnly(prop) => {
+                let mut out = String::with_capacity(256);
+                out.push_str(r#"{"err":"PropertyReadOnly","desc":"Não é possível escrever para esta propiedade"},"prop":"#);
+                append_json_string(&mut out, &prop);
+                out.push('}');
+                out
+            },
+            Self::PropertyInvalid(prop) => {
+                let mut out = String::with_capacity(256);
+                out.push_str(r#"{"err":"PropertyInvalid","desc":"O valor usada para essa propieadade é inválido"},"prop":"#);
+                append_json_string(&mut out, &prop);
+                out.push('}');
+                out
+            },
+            Self::BadConfig(prop) => {
+                let mut out = String::with_capacity(256);
+                out.push_str(r#"{"err":"BadConfig","desc":"Essa propieadade está configurada com um valor inválido, reconfigure com um valor válido"},"prop":"#);
+                append_json_string(&mut out, &prop);
+                out.push('}');
+                out
+            },
+            Self::BadInstanceStatus(status) => match status {
+                InstanceStatus::Cold => r#"{"err":"BadInstanceStatus","desc":"O save está desligado","status":"cold"}"#,
+                InstanceStatus::Loading => r#"{"err":"BadInstanceStatus","desc":"O save está ligando","status":"loading"}"#,
+                InstanceStatus::Online => r#"{"err":"BadInstanceStatus","desc":"O save está ligado","status":"online"}"#,
+                InstanceStatus::Shutdown => r#"{"err":"BadInstanceStatus","desc":"O save está desligando","status":"shutdown"}"#,
+                InstanceStatus::Offline => r#"{"err":"BadInstanceStatus","desc":"O save está desligado","status":"offline"}"#,
+            }.to_owned(),
+            Self::PortInUse => r#"{"err":"PortInUse","desc":"A porta já esta sendo usada por outro save"}"#.to_owned(),
+            Self::JavaError(desc) => {
+                let mut out = String::with_capacity(256);
+                out.push_str(r#"{"err":"JavaError","desc":"Ocorreu um erro ao executar o Java","ioerr":"#);
+                append_json_string(&mut out, &desc);
+                out.push('}');
+                out
+            },
+            Self::IOError(desc) => {
+                let mut out = String::with_capacity(256);
+                out.push_str(r#"{"err":"IOError","desc":"Ocorreu um erro ao operar os arquivos","ioerr":"#);
+                append_json_string(&mut out, &desc);
+                out.push_str(r#""java":"#);
+                append_json_string(&mut out, get_java_path().as_str());
+                out.push('}');
+                out
+            },
+        };
+        json_response_with_status(body, status)
     }
 }
 
-impl From<Result<(), SaveError>> for WarpResult<Response> {
-    fn from(value: Result<(), SaveError>) -> Self {
+impl From<Result<(), ApiError>> for WarpResult<Response> {
+    fn from(value: Result<(), ApiError>) -> Self {
         match value {
             Ok(()) => WarpResult::Ok(warp::reply().into_response()),
             Err(error) => WarpResult::Err(error),
@@ -152,12 +195,18 @@ impl From<Result<(), SaveError>> for WarpResult<Response> {
     }
 }
 
-impl<T: Reply> From<Result<T, SaveError>> for WarpResult<T> {
-    fn from(value: Result<T, SaveError>) -> Self {
+impl<T: Reply> From<Result<T, ApiError>> for WarpResult<T> {
+    fn from(value: Result<T, ApiError>) -> Self {
         match value {
             Ok(value) => WarpResult::Ok(value),
             Err(error) => WarpResult::Err(error),
         }
+    }
+}
+
+impl From<std::io::Error> for ApiError {
+    fn from(error: std::io::Error) -> Self {
+        Self::IOError(error.to_string())
     }
 }
 
@@ -167,7 +216,7 @@ pub fn json_response(body: String) -> Response {
     let (mut parts, body) = Response::new(body.into()).into_parts();
     parts
         .headers
-        .append(CONTENT_TYPE, "application/json".parse().unwrap());
+        .append(CONTENT_TYPE, "application/json".parse().expect("\"application/json\" is not a valid content-type"));
     Response::from_parts(parts, body)
 }
 
@@ -178,7 +227,7 @@ fn json_response_with_status(body: String, status: warp::http::StatusCode) -> Re
     parts.status =status;
     parts
         .headers
-        .append(CONTENT_TYPE, "application/json".parse().unwrap());
+        .append(CONTENT_TYPE, "application/json".parse().expect("\"application/json\" is not a valid content-type"));
     Response::from_parts(parts, body)
 }
 

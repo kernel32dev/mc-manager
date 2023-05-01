@@ -1,11 +1,11 @@
 use crate::properties::read_property;
 use crate::server::is_shutdown;
 use crate::state::save;
-use crate::utils::{append_comma_separated, append_json_string, SaveError};
+use crate::utils::{append_comma_separated, append_json_string, ApiError};
 use lazy_static::lazy_static;
 use std::collections::HashMap;
 use std::process::Stdio;
-use std::sync::Arc;
+use std::sync::{Arc};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{ChildStdin, Command};
 use tokio::sync::{watch, Mutex, RwLock};
@@ -14,7 +14,7 @@ lazy_static! {
     static ref INSTANCES: RwLock<HashMap<String, Instance>> = RwLock::new(HashMap::new());
 }
 
-static mut JAVA_PATH: Option<String> = None;
+static JAVA_PATH: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
 
 struct Instance {
     status: InstanceStatus,
@@ -25,10 +25,16 @@ struct Instance {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum InstanceStatus {
-    Offline,
+    /// the initial status, indicates the instance has never run yet and has no console output
+    Cold,
+    /// set as soon as the java instance starts
     Loading,
+    /// set after a "Done" line is detected, the server may now accept commands
     Online,
+    /// set after a stop is issued, the server must not accept any commands
     Shutdown,
+    /// set after shutdown is complete, there is console output
+    Offline,
 }
 
 pub struct InstanceVector {
@@ -36,29 +42,25 @@ pub struct InstanceVector {
 }
 
 impl Instance {
-    async fn stop(&mut self) -> Result<(), SaveError> {
+    async fn stop(&mut self) -> Result<(), ApiError> {
         match self.status {
-            InstanceStatus::Offline => unreachable!(),
-            InstanceStatus::Loading => Err(SaveError::IsLoading),
+            InstanceStatus::Cold => unreachable!(),
+            InstanceStatus::Loading => Err(ApiError::BadInstanceStatus(InstanceStatus::Loading)),
             InstanceStatus::Online => {
                 let mut stdin = self.stdin.lock().await;
-                stdin.write(b"stop\r\n").await.unwrap();
+                stdin.write(b"stop\r\n").await?;
                 self.status = InstanceStatus::Shutdown;
                 Ok(())
             }
             InstanceStatus::Shutdown => Ok(()),
+            InstanceStatus::Offline => Err(ApiError::BadInstanceStatus(InstanceStatus::Offline)),
         }
     }
 }
 
 impl InstanceStatus {
-    pub fn to_error(self) -> SaveError {
-        match self {
-            InstanceStatus::Offline => SaveError::IsOffline,
-            InstanceStatus::Loading => SaveError::IsLoading,
-            InstanceStatus::Online => SaveError::IsOnline,
-            InstanceStatus::Shutdown => SaveError::IsShutdown,
-        }
+    pub fn to_error(self) -> ApiError {
+        ApiError::BadInstanceStatus(self)
     }
 }
 
@@ -80,31 +82,39 @@ impl InstanceVector {
 }
 
 /// creates the instance, returns an error if it is already online
-pub async fn start_instance(name: &str) -> Result<(), SaveError> {
+pub async fn start_instance(name: &str) -> Result<(), ApiError> {
     save::exists(name)?;
     let port = match read_property(format!("saves/{name}/server.properties"), "server-port")? {
         Some(port) => match port.parse() {
             Ok(port) => port,
-            Err(_) => return Err(SaveError::IOError),
+            Err(_) => return Err(ApiError::BadConfig("server-port".to_owned())),
         },
-        None => return Err(SaveError::IOError),
+        None => return Err(ApiError::BadConfig("server-port".to_owned())),
     };
     let mut instances = INSTANCES.write().await;
-    if instances.contains_key(name) {
-        return Err(SaveError::IsOnline);
+    if let Some(instance) = instances.get(name) {
+        if instance.status != InstanceStatus::Offline {
+            return Err(instance.status.to_error());
+        }
     }
     if instances.iter().any(|x| x.1.port == port) {
-        return Err(SaveError::PortInUse);
+        return Err(ApiError::PortInUse);
     }
-    let mut directory = std::env::current_dir().expect("current_dir");
+    let mut directory = std::env::current_dir()?;
     directory.push("saves");
     directory.push(name);
-    let mut directory = directory.to_str().expect("failed to convert path to utf8");
+    let Some(mut directory) = directory.to_str() else {
+        let mut out = String::new();
+        out.push_str("Failed to convert path \"");
+        out.push_str(directory.to_string_lossy().as_ref());
+        out.push_str("\" to utf8");
+        return Err(ApiError::IOError(out));
+    };
     if directory.starts_with(r"\\?\") {
         directory = &directory[4..];
     }
     save::access(name)?;
-    let mut child = match Command::new(get_java_path())
+    let mut child = match Command::new(get_java_path().as_str())
         .args(["-jar", "server.jar", "nogui"])
         .current_dir(directory)
         .stdin(Stdio::piped())
@@ -112,9 +122,15 @@ pub async fn start_instance(name: &str) -> Result<(), SaveError> {
         .spawn()
     {
         Ok(child) => child,
-        Err(_) => return Err(SaveError::IOError),
+        Err(error) => return Err(ApiError::JavaError(error.to_string())),
     };
-    println!("[{name}] Java process spawned");
+    if child.stdin.is_none() && child.stdout.is_none() {
+        return Err(ApiError::IOError("failed to capture process stdin and stdout".to_owned()))
+    } else if child.stdin.is_none() {
+        return Err(ApiError::IOError("failed to capture process stdin".to_owned()));
+    } else if child.stdout.is_none() {
+        return Err(ApiError::IOError("failed to capture process stdout".to_owned()));
+    }
     let stdin = Arc::new(Mutex::new(child.stdin.take().unwrap()));
     let stdout = BufReader::new(child.stdout.take().unwrap());
     let vector = Arc::new(InstanceVector::new());
@@ -128,7 +144,7 @@ pub async fn start_instance(name: &str) -> Result<(), SaveError> {
     let name = name_arc.clone();
     // waits for child to complete
     tokio::spawn(async move {
-        println!("[{name}] Waiter thread spawned");
+        println!("[{name}] Java process spawned");
         match child.wait().await {
             Ok(status) => match status.code() {
                 Some(0) => println!("[{name}] Java process finished"),
@@ -148,15 +164,16 @@ pub async fn start_instance(name: &str) -> Result<(), SaveError> {
             )
         }
         let mut instances = INSTANCES.write().await;
-        instances
-            .remove(&*name)
-            .expect("Waiter thread finished, and its instance was removed");
-        println!("[{name}] Waiter thread finished");
+        if instances.remove(&*name).is_none() {
+            println!("[{name}] Waiter thread finished, and its instance was removed");
+        } else {
+            println!("[{name}] Waiter thread finished");
+        }
     });
     let name: Arc<String> = name_arc.clone();
     // reads and parses stdout
     tokio::spawn(async move {
-        println!("[{name}] Reader thread spawned");
+        println!("[{name}] Reader task spawned");
         let mut looking_for_done = true;
         let mut line = Vec::with_capacity(4 * 1024);
         let mut stdout = stdout;
@@ -194,50 +211,50 @@ pub async fn start_instance(name: &str) -> Result<(), SaveError> {
             }
         }
         vector.finish().await;
-        println!("[{name}] Reader thread finished");
+        println!("[{name}] Reader task finished");
     });
     instances.insert(name_arc.to_string(), instance);
     Ok(())
 }
 
 /// stops the instance, returns immedialty, will return an error if it is not online
-pub async fn stop_instance(name: &str) -> Result<(), SaveError> {
+pub async fn stop_instance(name: &str) -> Result<(), ApiError> {
     save::exists(name)?;
     let mut instances = INSTANCES.write().await;
     if let Some(instance) = instances.get_mut(name) {
         instance.stop().await
     } else {
-        Err(SaveError::IsOffline)
+        Err(ApiError::BadInstanceStatus(InstanceStatus::Cold))
     }
 }
 
 /// checks if the instance is online, may returns an error if it is not online
-pub async fn query_instance(name: &str) -> Result<InstanceStatus, SaveError> {
+pub async fn query_instance(name: &str) -> Result<InstanceStatus, ApiError> {
     save::exists(name)?;
     let instances = INSTANCES.read().await;
     if let Some(instance) = instances.get(name) {
         Ok(instance.status)
     } else {
-        Ok(InstanceStatus::Offline)
+        Ok(InstanceStatus::Cold)
     }
 }
 
-/// returns a stream to the stdout of the stream, optionally you can skip some bytes of the output
-pub async fn read_instance(name: &str) -> Result<Arc<InstanceVector>, SaveError> {
+/// returns the instance vector, which can be subscribed to to receive read and wait for stdout
+pub async fn read_instance(name: &str) -> Result<Arc<InstanceVector>, ApiError> {
     save::exists(name)?;
     let instances = INSTANCES.read().await;
     if let Some(instance) = instances.get(name) {
         Ok(instance.vector.clone())
     } else {
-        Err(SaveError::IsOffline)
+        Err(ApiError::BadInstanceStatus(InstanceStatus::Cold))
     }
 }
 
-/// returns a stream to the stdout of the stream, optionally you can skip some bytes of the output
-pub async fn write_instance(name: &str, command: &str) -> Result<(), SaveError> {
+/// writes to the stdin of the instance
+pub async fn write_instance(name: &str, command: &str) -> Result<(), ApiError> {
     save::exists(name)?;
     if command.as_bytes().iter().any(|x| matches!(x, 0..=31 | 127)) {
-        return Err(SaveError::BadRequest);
+        return Err(ApiError::BadRequest);
     }
     let command = command.trim();
     if command == "/stop" {
@@ -255,20 +272,19 @@ pub async fn write_instance(name: &str, command: &str) -> Result<(), SaveError> 
     if let Some(instance) = instances.get(name) {
         if instance.status != InstanceStatus::Online {
             Err(instance.status.to_error())
-        } else if instance
+        } else if let Err(error) = instance
             .stdin
             .lock()
             .await
             .write(out.as_bytes())
             .await
-            .is_ok()
         {
-            Ok(())
+            Err(error.into())
         } else {
-            Err(SaveError::IOError)
+            Ok(())
         }
     } else {
-        Err(SaveError::IsOffline)
+        Err(ApiError::BadInstanceStatus(InstanceStatus::Cold))
     }
 }
 
@@ -281,10 +297,11 @@ pub async fn instance_status_summary() -> String {
         |out, (name, instance)| {
             append_json_string(out, name);
             match instance.status {
-                InstanceStatus::Offline => unreachable!(),
+                InstanceStatus::Cold => unreachable!(),
                 InstanceStatus::Loading => *out += r#":"loading""#,
                 InstanceStatus::Online => *out += r#":"online""#,
                 InstanceStatus::Shutdown => *out += r#":"shutdown""#,
+                InstanceStatus::Offline => *out += r#":"offline""#,
             }
         },
     );
@@ -321,12 +338,10 @@ fn bytes_contains(haystack: &[u8], needle: &[u8]) -> bool {
 }
 
 pub fn set_java_path(java: String) {
-    unsafe { JAVA_PATH = Some(java) };
+    let mut lock = JAVA_PATH.lock().expect("JAVA_PATH lock is poisoned");
+    *lock = java;
 }
 
-pub fn get_java_path() -> &'static str {
-    match unsafe { &JAVA_PATH } {
-        Some(path) => path,
-        None => "java.exe",
-    }
+pub fn get_java_path<'a>() -> std::sync::MutexGuard<'a, String> {
+    JAVA_PATH.lock().expect("JAVA_PATH lock is poisoned")
 }

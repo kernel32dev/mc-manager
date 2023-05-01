@@ -18,6 +18,7 @@ let selected = null;
 let show_version_screen_callback = null;
 
 let ws = null;
+let status_ping_delay = 0;
 
 // API FUNCTIONS //
 
@@ -40,10 +41,16 @@ function api(method, path, payload) {
                     return;
                 }
             }
+            document.body.classList.toggle("noconn", r.status === 0);
             if (r.status === 200) {
                 resolve(response);
             } else if (r.status === 400 || r.status === 500) {
                 reject(response);
+            } else if (r.status === 0) {
+                reject({
+                    err: "NoConnection",
+                    desc: "Não foi possível estabelescer uma conecção com o servidor",
+                });
             } else {
                 reject({
                     err: "BadStatus",
@@ -52,15 +59,11 @@ function api(method, path, payload) {
                 });
             }
         };
-        if (payload === null || payload === undefined) {
+        if (payload === undefined) {
             r.send();
-        } else if (typeof payload === "string") {
-            r.send(payload);
-        } else if (typeof payload == "object" && payload !== null) {
+        } else {
             r.setRequestHeader("Content-Type", "application/json");
             r.send(JSON.stringify(payload));
-        } else {
-            console.error("invalid payload type " + typeof payload);
         }
     });
 }
@@ -198,7 +201,9 @@ function show_screen(screen, within_popstate_handler) {
         }
     }
     current_screen = screen;
-    if (screen === "create-screen") {
+    if (screen === "saves-screen") {
+        fetch_update_status(true);
+    } else if (screen === "create-screen") {
         unselect_save();
         document.getElementById("create-param-name").focus();
     } else if (screen === "modify-screen") {
@@ -224,7 +229,7 @@ function show_screen(screen, within_popstate_handler) {
                 ws.onerror = onerror;
                 ws.onmessage = onmessage;
             }, 3000);
-            console.error(error);
+            handle_error(error, "ws");
         }
         function onmessage(ev) {
             cursor += ev.data.size;
@@ -235,7 +240,9 @@ function show_screen(screen, within_popstate_handler) {
                     output.append(document.createElement("br"), lines[i]);
                 }
                 console.log("message", text);
-            }).catch(console.error);
+            }).catch(function(error) {
+                handle_error(error, "ws");
+            });
         }
         ws = new WebSocket(`${api_console}/0/${name_encoded}`);
         ws.onerror = onerror;
@@ -262,7 +269,7 @@ function update_status(status) {
     foreach(Object.values(saves), function(save) {
         let new_status = status[save.name];
         if (new_status === undefined) {
-            new_status = "offline";
+            new_status = "cold";
         }
         if (save.status !== new_status) {
             let elem = saves_elem[save.name];
@@ -274,6 +281,17 @@ function update_status(status) {
             }
         }
     });
+}
+
+function show_popup(message) {
+    let output = document.getElementById("popup-message");
+    let lines = message.split('\n');
+    document.body.classList.add("show-popup");
+    clear_elem(output);
+    output.append(lines[0]);
+    for (let i = 1; i < lines.length; i++) {
+        output.append(document.createElement("br"), lines[i]);
+    }
 }
 
 function main() {
@@ -298,7 +316,7 @@ function main() {
                     show_screen(screen, true);
                 }
             } else if (screen === "console-screen") {
-                if (selected !== null && saves[selected] !== undefined && saves[selected].status !== "offline") {
+                if (selected !== null && saves[selected] !== undefined && saves[selected].status !== "cold") {
                     show_screen(screen, true);
                 }
             } else if (screen === "create-screen" || screen === "saves-screen") {
@@ -330,22 +348,24 @@ function main() {
         show_screen("create-screen");
     });
     document.getElementById("saves-button-modify").addEventListener("click", function() {
-        if (selected !== null && saves[selected].status === "offline") {
+        if (selected !== null && (saves[selected].status === "offline" || saves[selected].status === "cold")) {
             show_screen("modify-screen");
         }
     });
     document.getElementById("saves-button-delete").addEventListener("click", function() {
-        if (selected !== null && saves[selected].status === "offline") {
+        if (selected !== null && (saves[selected].status === "offline" || saves[selected].status === "cold")) {
             show_screen("delete-screen");
         }
     });
     document.getElementById("saves-button-refresh").addEventListener("click", function() {
         api_fetch_saves().then(function(response) {
             create_saves(response.saves);
-        }).catch(console.error);
+        }).catch(function(error) {
+            handle_error(error, "api_fetch_saves");
+        });
     });
     document.getElementById("saves-button-console").addEventListener("click", function() {
-        if (selected !== null && saves[selected].status !== "offline") {
+        if (selected !== null && saves[selected].status !== "cold") {
             show_screen("console-screen");
         }
     });
@@ -378,7 +398,7 @@ function main() {
             show_screen("saves-screen");
         }).catch(function(response) {
             enable("create-button-confirm", "create-button-cancel");
-            console.error(response);
+            handle_error(response, "api_create_save");
         });
     });
 
@@ -395,7 +415,7 @@ function main() {
             show_screen("saves-screen");
         }).catch(function(response) {
             enable("modify-button-confirm", "modify-button-cancel");
-            console.error(response);
+            handle_error(response, "api_modify_save");
         });
     });
 
@@ -411,7 +431,7 @@ function main() {
                 show_screen("saves-screen");
             }).catch(function(response) {
                 enable("delete-button-confirm", "delete-button-cancel");
-                console.error(response);
+                handle_error(response, "api_delete_save");
             });
         } else {
             show_screen("saves-screen");
@@ -422,7 +442,9 @@ function main() {
 
     document.getElementById('console-input').addEventListener("keydown", function(ev) {
         if (ev.key === "Enter" && selected !== null) {
-            api_command(selected, this.value).catch(console.error);
+            api_command(selected, this.value).catch(function(error) {
+                handle_error(error, "api_command");
+            });
             this.value = "";
             this.focus();
         }
@@ -451,9 +473,11 @@ function main() {
         });
         let create_area = document.getElementById("create-input-area");
         foreach(create_properties, function(create_property) {
+            let p = create_p(schema[create_property].label);
             let elem = param_setup(create_property);
+            p.setAttribute("title", create_property);
             elem.classList.add("create-param", "wide");
-            create_area.append(create_p(schema[create_property].label));
+            create_area.append(p);
             create_area.append(elem);
         });
         create_area.append(create_p());
@@ -461,9 +485,11 @@ function main() {
         let modify_properties = Object.keys(schema);
         modify_properties.sort();
         foreach(modify_properties, function(modify_property) {
+            let p = create_p(schema[modify_property].label);
             let elem = param_setup(modify_property);
+            p.setAttribute("title", modify_property);
             elem.classList.add("modify-param", "wide");
-            modify_area.append(create_p(schema[modify_property].label));
+            modify_area.append(p);
             modify_area.append(elem);
         });
         modify_area.append(create_p());
@@ -472,11 +498,12 @@ function main() {
 
         future_saves.then(function(response) {
             create_saves(response.saves);
-        }).catch(console.error);
+        }).catch(function(error) {
+            handle_error(error, "api_fetch_saves");
+        });
 
         // versions were loaded, create versions-screen
         future_versions.then(function(response) {
-            console.log(response);
             let area = document.getElementById("version-area");
             foreach(response, function(version) {
                 let elem = document.createElement("button");
@@ -493,39 +520,23 @@ function main() {
                     }
                 });
             });
-        }).catch(console.error);
-    }).catch(console.error);
+        }).catch(function(error) {
+            handle_error(error, "api_fetch_versions");
+        });
+    }).catch(function(error) {
+        handle_error(error, "api_fetch_schema");
+    });
+
+    // setup popup
+
+    document.getElementById("popup-background").addEventListener("click", function() {
+        document.body.classList.remove("show-popup");
+    });
 
     // setup status update
 
-    let status_ping_delay = 0;
-
     setInterval(function() {
-        if (current_screen !== "saves-screen") {
-            return;
-        }
-        function some_loading_shutdown() {
-            let saves_list = Object.values(saves);
-            for (let i = 0; i < saves_list.length; i++) {
-                if (saves_list[i].status === "loading" || saves_list[i].status === "shutdown") {
-                    return true;
-                }
-            }
-            return false;
-        }
-        if (!some_loading_shutdown()) {
-            // if none is either loading or shutting down, only check for updates every 5-9 seconds instead of one
-            if (status_ping_delay > 0) {
-                status_ping_delay -= 1;
-                return;
-            }
-            // time to check status again, reset delay
-            status_ping_delay = 5 + Math.floor(Math.random() * 5);
-        } else {
-            // some one is either loading or shuting down, check every second for updates
-            status_ping_delay = 0;
-        }
-        api_fetch_status().then(update_status).catch(console.error);
+        fetch_update_status(false);
     }, 1000);
 }
 
@@ -534,20 +545,24 @@ function main() {
 function start_stop_save(name) {
     let save = saves[name];
     let save_div = saves_elem[name];
-    if (save.status === "offline") {
+    if (save.status === "offline" || save.status === "cold") {
         api_start_save(name).then(function(response) {
-            save_div.classList.remove("offline");
+            save_div.classList.remove("offline", "cold");
             save_div.classList.add("loading");
             save.status = "loading";
             if (name === selected) select_save(selected);
-        }).catch(console.error);
+        }).catch(function(error) {
+            handle_error(error, "api_start_save");
+        });
     } else if (save_div.classList.contains("online")) {
         api_stop_save(name).then(function(response) {
             save_div.classList.remove("online");
             save_div.classList.add("shutdown");
             save.status = "shutdown";
             if (name === selected) select_save(selected);
-        }).catch(console.error);
+        }).catch(function(error) {
+            handle_error(error, "api_stop_save");
+        });
     }
 }
 
@@ -561,18 +576,21 @@ function select_save(name) {
     }
     let elem = saves_elem[name];
     elem.classList.add("selected");
-    if (elem.classList.contains("offline")) {
+    if (elem.classList.contains("cold")) {
         enable("saves-button-play", "saves-button-modify", "saves-button-delete");
+        play_button_caption.innerText = "Iniciar mundo";
+    } else if (elem.classList.contains("loading")) {
+        enable("saves-button-console");
         play_button_caption.innerText = "Iniciar mundo";
     } else if (elem.classList.contains("online")) {
         enable("saves-button-play", "saves-button-console");
         play_button_caption.innerText = "Parar mundo";
-    } else if (elem.classList.contains("loading")) {
-        enable("saves-button-console");
-        play_button_caption.innerText = "Iniciar mundo";
     } else if (elem.classList.contains("shutdown")) {
         enable("saves-button-console");
         play_button_caption.innerText = "Parar mundo";
+    } else if (elem.classList.contains("offline")) {
+        enable("saves-button-play", "saves-button-modify", "saves-button-delete", "saves-button-console");
+        play_button_caption.innerText = "Iniciar mundo";
     }
     selected = name;
 }
@@ -637,6 +655,7 @@ function param_setup(prop_name) {
     }
     elem.classList.toggle("disabled", prop.access !== "write");
     elem.dataset.prop = prop_name;
+    elem.setAttribute("title", prop_name);
     return elem;
 }
 
@@ -725,6 +744,36 @@ function param_load(elem, save) {
     }
 }
 
+function fetch_update_status(force) {
+    if (current_screen !== "saves-screen") {
+        return;
+    }
+    function some_loading_shutdown() {
+        let saves_list = Object.values(saves);
+        for (let i = 0; i < saves_list.length; i++) {
+            if (saves_list[i].status === "loading" || saves_list[i].status === "shutdown") {
+                return true;
+            }
+        }
+        return false;
+    }
+    if (force || some_loading_shutdown()) {
+        // some is either loading or shuting down, check every second for updates
+        status_ping_delay = 0;
+    } else {
+        // if none is either loading or shutting down, only check for updates every 5-9 seconds instead of one
+        if (status_ping_delay > 0) {
+            status_ping_delay -= 1;
+            return;
+        }
+        // time to check status again, reset delay
+        status_ping_delay = 5 + Math.floor(Math.random() * 5);
+    }
+    api_fetch_status().then(update_status).catch(function(error) {
+        handle_error(error, "api_fetch_status");
+    });
+}
+
 const FOR_EACH_BREAK = {};
 
 // class callback for each item in array, if the callback returns FOR_EACH_BREAK, the for quits early
@@ -770,9 +819,11 @@ function play_click_sound() {
     try {
         click_sound.pause();
         click_sound.currentTime = 0;
-        click_sound.play().catch(console.error);
-    } catch (e) {
-        console.error(e);
+        click_sound.play().catch(function(error) {
+            handle_error(error, "sound");
+        });
+    } catch (error) {
+        handle_error(error, "sound");
     }
 }
 
@@ -814,4 +865,38 @@ function validate_integer(elem, min, max) {
         return false;
     }
     return true;
+}
+
+function handle_error(error, ctx) {
+    // "ws"
+    // "api_fetch_saves"
+    // "api_create_save"
+    // "api_modify_save"
+    // "api_delete_save"
+    // "api_command"
+    // "api_fetch_versions"
+    // "api_fetch_schema"
+    // "api_fetch_status"
+    // "api_start_save"
+    // "api_stop_save"
+    // "sound"
+    if (ctx === "api_fetch_status") {
+        return;
+    }
+    if (ctx.startsWith("api_")) {
+        if (typeof error.err === "string") {
+            let message = error.desc;
+            if (typeof error.ioerr === "string") {
+                message += "\n" + error.ioerr;
+            }
+            if (typeof error.java === "string") {
+                message += "\nJava: \"" + error.java + "\"";
+            }
+            if (typeof error.prop === "string") {
+                message += "\nO id da propiedade em questão é " + error.prop;
+            }
+            show_popup(message);
+        }
+    }
+    console.error({ctx,error});
 }

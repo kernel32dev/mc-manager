@@ -144,10 +144,14 @@ pub fn serve(shutdown: Option<tokio::sync::oneshot::Receiver<()>>) {
     rt.block_on(
         warp::serve(routes).bind_with_graceful_shutdown((ip, port), async move {
             if let Some(shutdown) = shutdown {
-                shutdown.await.unwrap();
+                shutdown.await.expect("The shutdown oneshot chanel's sender was dropped");
                 println!("[*] Stopping service");
             } else {
-                tokio::signal::ctrl_c().await.unwrap();
+                if let Err(_) = tokio::signal::ctrl_c().await {
+                    println!("[!] Failed to detect CTRL-C");
+                    // the line below never returns
+                    let () = std::future::pending().await;
+                }
                 println!("[*] CTRL-C detected");
             }
             set_shutdown();

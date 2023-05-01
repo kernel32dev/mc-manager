@@ -5,19 +5,6 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Minecraft Server Manager</title>
-    <link rel="preload" href="assets/status/loading-0.png" as="image">
-    <link rel="preload" href="assets/status/loading-1.png" as="image">
-    <link rel="preload" href="assets/status/loading-2.png" as="image">
-    <link rel="preload" href="assets/status/loading-3.png" as="image">
-    <link rel="preload" href="assets/status/loading-4.png" as="image">
-    <link rel="preload" href="assets/status/loading-5.png" as="image">
-    <link rel="preload" href="assets/status/shutdown-0.png" as="image">
-    <link rel="preload" href="assets/status/shutdown-1.png" as="image">
-    <link rel="preload" href="assets/status/shutdown-2.png" as="image">
-    <link rel="preload" href="assets/status/shutdown-3.png" as="image">
-    <link rel="preload" href="assets/status/shutdown-4.png" as="image">
-    <link rel="preload" href="assets/status/shutdown-5.png" as="image">
-    <link rel="preload" href="assets/status/offline.png" as="image">
     <link rel="stylesheet" href="style.css">
     <script src="script.js"></script>
 </head>
@@ -89,6 +76,23 @@
     </div>
     <div id="version-buttons-bar" class="version-screen shadow dirt bottom-bar-1x1 hide">
         <button id="version-button-cancel"><span>Cancelar</span></button>
+    </div>
+    <div id="noconn-box"></div>
+    <div id="popup-background">
+        <div id="popup-box">
+            <div id="popup-tl"></div>
+            <div id="popup-t"></div>
+            <div id="popup-tr"></div>
+            <div id="popup-l"></div>
+            <div id="popup">
+                <div id="popup-message"></div>
+                <button id="popup-button"><span>OK</span></button>
+            </div>
+            <div id="popup-r"></div>
+            <div id="popup-bl"></div>
+            <div id="popup-b"></div>
+            <div id="popup-br"></div>
+        </div>
     </div>
 </body>
 </html>
