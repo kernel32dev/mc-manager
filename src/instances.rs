@@ -14,6 +14,8 @@ lazy_static! {
     static ref INSTANCES: RwLock<HashMap<String, Instance>> = RwLock::new(HashMap::new());
 }
 
+static mut JAVA_PATH: Option<String> = None;
+
 struct Instance {
     status: InstanceStatus,
     port: u16,
@@ -102,7 +104,7 @@ pub async fn start_instance(name: &str) -> Result<(), SaveError> {
         directory = &directory[4..];
     }
     save::access(name)?;
-    let mut child = match Command::new("java.exe")
+    let mut child = match Command::new(get_java_path())
         .args(["-jar", "server.jar", "nogui"])
         .current_dir(directory)
         .stdin(Stdio::piped())
@@ -316,4 +318,15 @@ fn bytes_contains(haystack: &[u8], needle: &[u8]) -> bool {
         }
     }
     false
+}
+
+pub fn set_java_path(java: String) {
+    unsafe { JAVA_PATH = Some(java) };
+}
+
+pub fn get_java_path() -> &'static str {
+    match unsafe { &JAVA_PATH } {
+        Some(path) => path,
+        None => "java.exe",
+    }
 }

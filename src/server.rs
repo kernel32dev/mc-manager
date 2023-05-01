@@ -3,14 +3,14 @@ use std::io::ErrorKind;
 use std::sync::atomic::{AtomicBool, Ordering};
 use warp::Filter;
 use crate::api::*;
-use crate::instances::stop_all_instances;
+use crate::instances::{stop_all_instances, set_java_path};
 use crate::properties::read_properties;
 use crate::utils::filters;
 
 static SHUTDOWN: AtomicBool = AtomicBool::new(false);
 
 const CONFIG_FILE: &str = "mc-manager.properties";
-const DEFAULT_CONFIG_FILE: &str = "#mc-manager configurations file\r\n\r\nip=\r\nport=1234\r\n";
+const DEFAULT_CONFIG_FILE: &str = "#mc-manager configurations file\r\n\r\nip=\r\nport=1234\r\njava=\r\n";
 
 pub fn is_shutdown() -> bool {
     SHUTDOWN.load(Ordering::Relaxed)
@@ -100,14 +100,15 @@ pub fn serve(shutdown: Option<tokio::sync::oneshot::Receiver<()>>) {
     .build()
     .expect("failed to build runtime");
 
-    let (ip, port) = {
+    let (ip, port, java) = {
         let ip = config.get("ip");
         let port = config.get("port");
-        if let (Some(ip), Some(port)) = (ip, port) {
+        let java = config.get("java");
+        if let (Some(ip), Some(port), Some(java)) = (ip, port, java) {
             let ip = parse_ip(ip.trim());
             let port = parse_port(port.trim());
             if let (Some(ip), Some(port)) = (ip, port) {
-                (ip, port)
+                (ip, port, java.to_owned())
             } else {
                 if ip.is_none() {
                     println!("[!] ERROR: property ip is invalid");
@@ -124,9 +125,14 @@ pub fn serve(shutdown: Option<tokio::sync::oneshot::Receiver<()>>) {
             if port.is_none() {
                 println!("[!] ERROR: property port was not found");
             }
+            if java.is_none() {
+                println!("[!] ERROR: property java was not found");
+            }
             return;
         }
     };
+
+    set_java_path(java);
 
     if ip == [0, 0, 0, 0] {
         println!("[*] Minecraft Server Manager *:{}", port);
