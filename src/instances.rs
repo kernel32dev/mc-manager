@@ -164,10 +164,11 @@ pub async fn start_instance(name: &str) -> Result<(), ApiError> {
             )
         }
         let mut instances = INSTANCES.write().await;
-        if instances.remove(&*name).is_none() {
-            println!("[{name}] Waiter thread finished, and its instance was removed");
-        } else {
+        if let Some(instance) = instances.get_mut(&*name) {
+            instance.status = InstanceStatus::Offline;
             println!("[{name}] Waiter thread finished");
+        } else {
+            println!("[{name}] Waiter thread finished, and its instance was removed");
         }
     });
     let name: Arc<String> = name_arc.clone();

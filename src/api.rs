@@ -38,7 +38,7 @@ pub async fn modify_save(body: ModifySave) -> Result<WarpResult<impl Reply>, Inf
         return Ok(WarpResult::Err(ApiError::BadName));
     }
     match query_instance(&body.name).await {
-        Ok(InstanceStatus::Offline) => Ok(save::modify(&body.name, body.values).into()),
+        Ok(InstanceStatus::Offline | InstanceStatus::Cold) => Ok(save::modify(&body.name, body.values).into()),
         Ok(status) => Ok(WarpResult::Err(status.to_error())),
         Err(error) => Ok(WarpResult::Err(error)),
     }
@@ -54,7 +54,7 @@ pub async fn delete_save(body: DeleteSave) -> Result<WarpResult<impl Reply>, Inf
         return Ok(WarpResult::Err(ApiError::BadName));
     }
     match query_instance(&body.name).await {
-        Ok(InstanceStatus::Offline) => Ok(save::delete(&body.name).into()),
+        Ok(InstanceStatus::Offline | InstanceStatus::Cold) => Ok(save::delete(&body.name).into()),
         Ok(status) => Ok(WarpResult::Err(status.to_error())),
         Err(error) => Ok(WarpResult::Err(error)),
     }
