@@ -97,7 +97,7 @@ pub async fn start_instance(name: &str) -> Result<(), ApiError> {
             return Err(instance.status.to_error());
         }
     }
-    if instances.iter().any(|x| x.1.port == port) {
+    if instances.iter().any(|x| x.1.port == port && matches!(x.1.status, InstanceStatus::Loading | InstanceStatus::Online | InstanceStatus::Shutdown)) {
         return Err(ApiError::PortInUse);
     }
     let mut directory = std::env::current_dir()?;
