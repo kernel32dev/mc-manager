@@ -1,5 +1,6 @@
 
 use std::io::ErrorKind;
+use std::process::ExitCode;
 use std::sync::atomic::{AtomicBool, Ordering};
 use warp::Filter;
 use crate::api::*;
@@ -20,16 +21,16 @@ fn set_shutdown() {
     SHUTDOWN.store(true, Ordering::Relaxed);
 }
 
-pub fn serve(shutdown: Option<tokio::sync::oneshot::Receiver<()>>) {
+pub fn serve(shutdown: Option<tokio::sync::oneshot::Receiver<()>>) -> ExitCode {
 
     let apis = filters!(
-        GET fn versions;
+        GET async fn versions;
         GET async fn saves;
         GET fn icons String;
         GET fn schema;
         GET async fn status;
         WS async fn console usize String;
-        POST fn create_save;
+        POST async fn create_save;
         POST async fn modify_save;
         POST async fn delete_save;
         POST async fn start_save;
@@ -84,14 +85,14 @@ pub fn serve(shutdown: Option<tokio::sync::oneshot::Receiver<()>>) {
         println!("[!] ERROR: versions foulder was not found and could not be created");
     }
     if !config || !saves || !versions {
-        return;
+        return ExitCode::FAILURE;
     }
 
     let config = match read_properties(CONFIG_FILE) {
         Ok(config) => config,
         Err(_) => {
             println!("[!] ERROR: could not read config file");
-            return;
+            return ExitCode::FAILURE;
         }
     };
 
@@ -116,7 +117,7 @@ pub fn serve(shutdown: Option<tokio::sync::oneshot::Receiver<()>>) {
                 if port.is_none() {
                     println!("[!] ERROR: property port is invalid");
                 }
-                return;
+                return ExitCode::FAILURE;
             }
         } else {
             if ip.is_none() {
@@ -128,7 +129,7 @@ pub fn serve(shutdown: Option<tokio::sync::oneshot::Receiver<()>>) {
             if java.is_none() {
                 println!("[!] ERROR: property java was not found");
             }
-            return;
+            return ExitCode::FAILURE;
         }
     };
 
@@ -158,6 +159,7 @@ pub fn serve(shutdown: Option<tokio::sync::oneshot::Receiver<()>>) {
             stop_all_instances().await;
         }).1
     );
+    ExitCode::SUCCESS
 }
 
 fn parse_ip(ip: &str) -> Option<[u8; 4]> {

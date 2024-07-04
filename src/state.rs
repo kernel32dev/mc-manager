@@ -1,8 +1,68 @@
-
-use crate::properties::*;
 use crate::instances::InstanceStatus;
-use crate::utils::{now, append_json_string, append_comma_separated, ApiError};
+use crate::properties::*;
+use crate::utils::{append_comma_separated, append_json_string, now, ApiError};
 use std::collections::HashMap;
+use std::io::Write;
+
+pub async fn download_version(version: &str) -> Result<(), ApiError> {
+    let path = format!("versions/{version}.jar");
+    if std::fs::metadata(&path).is_ok_and(|x| x.is_file()) {
+        return Ok(());
+    }
+    let client = reqwest::Client::new();
+    let html = match async {
+        client
+            .get(format!("https://mcversions.net/download/{version}.html"))
+            .send()
+            .await?
+            .text()
+            .await
+    }
+    .await
+    {
+        Ok(html) => html,
+        Err(error) => return Err(ApiError::IOError(error.to_string())),
+    };
+    let Some(link) = html
+        .split("<a ")
+        .skip(1)
+        .filter_map(|version| {
+            version
+                .split_once(">Download Server Jar</a>")
+                .and_then(|(attrs, _)| attrs.split_once("href=\""))
+                .and_then(|(_, href)| href.split_once('"'))
+                .map(|(link, _)| link)
+        })
+        .next()
+    else {
+        return Ok(());
+    };
+
+    let mut file = std::fs::File::options()
+        .write(true)
+        .create(true)
+        .open(&path)?;
+
+    async {
+        let mut response = client
+            .get(link)
+            .send()
+            .await
+            .map_err(|x| ApiError::IOError(x.to_string()))?;
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|x| ApiError::IOError(x.to_string()))?
+        {
+            file.write_all(&chunk)?;
+        }
+        Ok(())
+    }
+    .await
+    .inspect_err(|_| {
+        let _ = std::fs::remove_file(&path);
+    })
+}
 
 /// an iterator to list all saves in the saves folder
 ///
@@ -42,8 +102,7 @@ pub mod save {
                 format!("saves/{name}/server.jar"),
             )?;
             Ok::<(), std::io::Error>(())
-        })()
-        {
+        })() {
             std::fs::remove_dir_all(format!("saves/{name}"))?;
             // the creation failed
             return Err(error.into());
@@ -117,7 +176,7 @@ pub mod save {
     pub fn schema() -> String {
         let mut out = String::with_capacity(24 * 1024);
         out += r#"{"schema":{"#;
-        append_comma_separated(PROPERTIES.iter(), &mut out, |out, prop|{
+        append_comma_separated(PROPERTIES.iter(), &mut out, |out, prop| {
             if prop.access == PropAccess::None {
                 return;
             }
@@ -184,7 +243,11 @@ pub mod save {
             *out += "}";
         });
         out += r#"},"create_properties":["#;
-        append_comma_separated(CREATE_PROPERTIES.iter().map(|x| *x), &mut out, append_json_string);
+        append_comma_separated(
+            CREATE_PROPERTIES.iter().map(|x| *x),
+            &mut out,
+            append_json_string,
+        );
         out += "]}";
         out
     }

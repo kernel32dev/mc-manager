@@ -101,6 +101,7 @@ pub enum ApiError {
 }
 
 /// implements warp::Reply
+#[derive(Clone)]
 pub enum WarpResult<T: Reply> {
     Ok(T),
     Err(ApiError),
@@ -211,7 +212,7 @@ impl From<std::io::Error> for ApiError {
 }
 
 /// creates a json reponse from raw body with the appropiate content-type
-pub fn json_response(body: String) -> Response {
+pub fn json_response(body: impl Into<warp::hyper::Body>) -> Response {
     use warp::http::header::CONTENT_TYPE;
     let (mut parts, body) = Response::new(body.into()).into_parts();
     parts
@@ -221,7 +222,7 @@ pub fn json_response(body: String) -> Response {
 }
 
 /// creates a json reponse from raw body with the appropiate content-type
-fn json_response_with_status(body: String, status: warp::http::StatusCode) -> Response {
+fn json_response_with_status(body: impl Into<warp::hyper::Body>, status: warp::http::StatusCode) -> Response {
     use warp::http::header::CONTENT_TYPE;
     let (mut parts, body) = Response::new(body.into()).into_parts();
     parts.status =status;

@@ -1,13 +1,15 @@
 use std::collections::HashMap;
 use std::convert::Infallible;
 
-use crate::instances::*;
 use crate::properties::PropValue;
 use crate::server::is_shutdown;
 use crate::state::save;
-use crate::utils::{json_response, WarpResult, ApiError};
+use crate::utils::{json_response, ApiError, WarpResult};
+use crate::{instances::*, state};
 use serde::Deserialize;
 use warp::Reply;
+
+static VERSION_CACHE: std::sync::RwLock<Option<&'static str>> = std::sync::RwLock::new(None);
 
 // APIS //
 
@@ -18,13 +20,16 @@ pub struct CreateSave {
     values: HashMap<String, PropValue>,
 }
 
-pub fn create_save(body: CreateSave) -> WarpResult<impl Reply> {
+pub async fn create_save(body: CreateSave) -> Result<WarpResult<impl Reply>, Infallible> {
     if !is_safe(&body.name) {
-        return WarpResult::Err(ApiError::BadName);
+        return Ok(WarpResult::Err(ApiError::BadName));
     }
-    save::create(&body.name, &body.version, body.values)
+    if let Err(error) = state::download_version(&body.version).await {
+        return Ok(WarpResult::Err(error.into()));
+    }
+    Ok(save::create(&body.name, &body.version, body.values)
         .map(json_response)
-        .into()
+        .into())
 }
 
 #[derive(Deserialize)]
@@ -38,7 +43,9 @@ pub async fn modify_save(body: ModifySave) -> Result<WarpResult<impl Reply>, Inf
         return Ok(WarpResult::Err(ApiError::BadName));
     }
     match query_instance(&body.name).await {
-        Ok(InstanceStatus::Offline | InstanceStatus::Cold) => Ok(save::modify(&body.name, body.values).into()),
+        Ok(InstanceStatus::Offline | InstanceStatus::Cold) => {
+            Ok(save::modify(&body.name, body.values).into())
+        }
         Ok(status) => Ok(WarpResult::Err(status.to_error())),
         Err(error) => Ok(WarpResult::Err(error)),
     }
@@ -84,6 +91,80 @@ pub async fn stop_save(body: StopSave) -> Result<WarpResult<impl Reply>, Infalli
     Ok(stop_instance(&body.name).await.into())
 }
 
+pub async fn versions() -> Result<WarpResult<impl Reply>, Infallible> {
+    if let Some(versions) = *VERSION_CACHE.read().unwrap() {
+        return Ok(WarpResult::Ok(json_response(versions)));
+    }
+    let response = match async {
+        reqwest::Client::new()
+            .get("https://mcversions.net")
+            .send()
+            .await?
+            .text()
+            .await
+    }
+    .await
+    {
+        Ok(response) => response,
+        Err(error) => return Ok(WarpResult::Err(ApiError::IOError(error.to_string()))),
+    };
+
+    let existing_versions: Result<Vec<String>, std::io::Error> = (|| {
+        let mut versions = Vec::new();
+        for path in std::fs::read_dir("versions")? {
+            let path = path?;
+            if let Some(filename) = path.file_name().to_str() {
+                if matches!(path.metadata(), Ok(md) if md.is_file()) {
+                    if let Some(name) = filename.strip_suffix(".jar") {
+                        versions.push(name.to_owned());
+                    }
+                }
+            }
+        }
+        Ok(versions)
+    })();
+    let mut existing_versions = match existing_versions {
+        Ok(versions) => versions,
+        Err(error) => return Ok(WarpResult::Err(error.into())),
+    };
+
+    let mut versions = String::new();
+    let mut online_versions = String::new();
+    for version in response.split("data-version=\"").skip(1) {
+        if !version.starts_with(|x: char| x.is_ascii_digit()) {
+            continue;
+        }
+        let Some((version, _)) = version.split_once('"') else {
+            continue;
+        };
+        if let Some(index) = existing_versions.iter().position(|x| x == version) {
+            existing_versions.remove(index);
+        }
+        online_versions.push_str("\"");
+        online_versions.push_str(version);
+        online_versions.push_str("\",");
+    }
+    versions.push('[');
+    for i in &existing_versions {
+        online_versions.push_str("\"");
+        online_versions.push_str(&i);
+        online_versions.push_str("\",");
+    }
+    versions.push_str(&online_versions);
+    if versions.ends_with(',') {
+        versions.pop();
+    }
+    versions.push(']');
+
+    let versions = *VERSION_CACHE
+        .write()
+        .unwrap()
+        .get_or_insert_with(|| versions.leak());
+
+    Ok(WarpResult::Ok(json_response(versions)))
+}
+
+/*
 pub fn versions() -> WarpResult<impl Reply> {
     let versions: Result<Vec<String>, std::io::Error> = (||{
         let mut versions = Vec::new();
@@ -104,6 +185,7 @@ pub fn versions() -> WarpResult<impl Reply> {
         Err(error) => Err(error.into()),
     }.into()
 }
+*/
 
 pub async fn saves() -> Result<WarpResult<impl Reply>, Infallible> {
     Ok((|| async {
@@ -121,7 +203,9 @@ pub async fn saves() -> Result<WarpResult<impl Reply>, Infallible> {
         }
         body.push('}');
         Ok(json_response(body))
-    })().await.into())
+    })()
+    .await
+    .into())
 }
 
 pub fn icons(save: String) -> WarpResult<impl Reply> {
@@ -146,7 +230,9 @@ pub fn schema() -> WarpResult<impl Reply> {
 }
 
 pub async fn status() -> Result<WarpResult<impl Reply>, Infallible> {
-    Ok(WarpResult::Ok(json_response(instance_status_summary().await)))
+    Ok(WarpResult::Ok(json_response(
+        instance_status_summary().await,
+    )))
 }
 
 #[derive(Deserialize)]
@@ -162,7 +248,11 @@ pub async fn command(body: Command) -> Result<WarpResult<impl Reply>, Infallible
     Ok(write_instance(&body.name, &body.command).await.into())
 }
 
-pub async fn console(mut offset: usize, save: String, ws: warp::ws::Ws) -> Result<WarpResult<impl Reply>, Infallible> {
+pub async fn console(
+    mut offset: usize,
+    save: String,
+    ws: warp::ws::Ws,
+) -> Result<WarpResult<impl Reply>, Infallible> {
     #[cfg(debug_assertions)]
     const DEBUG_WEB_SOCKET: bool = true;
     #[cfg(not(debug_assertions))]
@@ -245,7 +335,7 @@ fn parse_name(name: String) -> Result<String, ApiError> {
                         return None;
                     }
                     out.push(byte);
-                },
+                }
                 0x00..=0x7F => out.push(byte),
                 0x80..=0xFF => return None,
             }
